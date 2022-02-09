@@ -1358,7 +1358,7 @@ class MTCNN(object):
                 if score == tf_outie[i]:
                     indices.append(i)
 
-        tf_outie = tf.gather(tf.transpose(self._onet(tf_tempimg2)[2])[1, :], indices)
+        tf_outie = tf.gather(tf.transpose(self._onet(tf_tempimg2)[2])[1, :], indices) #THIS REPRESENTS THE FINAL CONFIDENCE SCORES FOR THE IMAGE 
 
         """
         # Comment for Tensorflow, uncomment for Regular Numpy
@@ -1374,10 +1374,10 @@ class MTCNN(object):
 
         # print(a.shape, b.shape, type(a), type(b), a, b, a is b)
 
-      gradient = tape.gradient(tf_outie, self.patch)
+      gradient = tape.gradient(tf_outie, tf_tempimg2)
 
-      print(gradient.shape, self.patch.shape)
+      # print(gradient.shape, self.patch.shape)
       # gradient = tape.gradient(tf_total_boxes[:,4], tempimg2)
-      # print(gradient.shape, tf_tempimg2.shape)
+      print(gradient.shape, tf_tempimg2.shape)
       # print(gradient)
       return tf_total_boxes, tf_points
