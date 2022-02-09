@@ -1,0 +1,137 @@
+1. label we need in create_adversarial_pattern is passed down from
+iterative_attack
+2. which also takes its label from createLabel(image,scale)
+3. def createLabel(image, scale):
+      image = imageChangeToFitPnet(image, scale)
+      label = pnet_attacked(image)
+      return label[0][0, :, :, :]
+ 
+4. imagechangetofitpnet basically scales it, casts the image into a tf variable
+then changes it and returns it
+5. label is pnet_attacked(image)
+6. pnet_attacked is the result of createPnet()
+7. def createPnet():
+      weight_file = 'mtcnn_weights.npy'
+      weights = np.load(weight_file, allow_pickle=True).tolist()
+      pnet = NetworkFactory().build_pnet()
+      pnet.set_weights(weights['pnet'])
+      return pnet
+8. this seems to literally just build pnet
+def build_pnet(self, input_shape=None):
+        if input_shape is None:
+            input_shape = (None, None, 3)
+
+        p_inp = Input(input_shape)
+
+        p_layer = Conv2D(10, kernel_size=(3, 3), strides=(1, 1), padding="valid")(p_inp)
+        p_layer = PReLU(shared_axes=[1, 2])(p_layer)
+        p_layer = MaxPooling2D(pool_size=(2, 2), strides=(2, 2), padding="same")(p_layer)
+
+        p_layer = Conv2D(16, kernel_size=(3, 3), strides=(1, 1), padding="valid")(p_layer)
+        p_layer = PReLU(shared_axes=[1, 2])(p_layer)
+
+        p_layer = Conv2D(32, kernel_size=(3, 3), strides=(1, 1), padding="valid")(p_layer)
+        p_layer = PReLU(shared_axes=[1, 2])(p_layer)
+
+        p_layer_out1 = Conv2D(2, kernel_size=(1, 1), strides=(1, 1))(p_layer)
+        p_layer_out1 = Softmax(axis=3)(p_layer_out1)
+
+        p_layer_out2 = Conv2D(4, kernel_size=(1, 1), strides=(1, 1))(p_layer)
+
+        p_net = Model(p_inp, [p_layer_out2, p_layer_out1])
+
+        return p_net
+9. pnet is supposed to put out 1x1x2 face classification, 1x1x4 bounding box 
+regression (x1,y1) (x2,y2) for bbox and 1x1x10 facial landmark localization (meh)
+10. The input of PNet is a 12 * 12 * 3 picture
+11. label has 30x15x4, for 1x30x15x4 + 1x30x15x2
+    label has 44x23x4, for 1x44x23x4 + 1x44x23x2
+    label has 64x34x4, for 1x64x34x4 + 1x64x34x2
+12. looks scaled mb image? look at who calls this
+13. Image shape:  (1, 138, 78, 3)
+    Full label: ((1, 64, 34, 4), (1, 64, 34, 2))
+    Label: (64, 34, 4)
+    and
+    Image shape: (1, 98, 55, 3)
+    Label: (44, 23, 4)
+    and
+    Image shape: (1, 70, 39, 3)
+    Label: (30, 15, 4)
+    
+    Image shape is gotten by taking the size (720 x 1280 x 3) and scaling it down
+    by the scale factor (~0.1075 sometimes, sometimes half etc.) BUT REVERSED
+    label = shape - ~10 / 2 on first 2 parameters.
+    In other words, the label is missing half the information, AND ALSO FLAT 10.
+    why.
+    Either way, assumption: each tensor is pixel that tells you ... something.
+    label is likely the 1x1x4 bounding box... curious?
+    values in label increase, and the IoU score increases.
+14. label is created with image, not adv_image
+    -> create_adv_pattern with prediction = pnet_attacked
+       and create label is used with initial image
+       
+       
+15. create AS in create adv pattern ORRR s
+
+16. MTCNN ISN'T IN FUCKING FOLDEER. WHERE IS ITTTT
+
+17. revert to tf < 2.0??
+
+18. grad.shape = (12, 48, 48, 3)
+    img.shape = (12, 48, 48, 3)
+    out.shape = (12, 4), (12, 10), (12, 2)
+    
+19. The error that I was committing - Converting the loss value and the predictions from the model to numpy array. It is imperative that you don't convert them to numpy arrays at any point in time before computing the gradients. In my case, I was using a custom loss function which converted the predicted values to numpy arrays for computations.
+
+20. this would explain why downgrading might help with more concrete errors values. so far so seems to function. exciting?
+
+21. Our loss from paper without - (minus) when using gradient descent. 
+no - in front
+
+conf big = -0.o004
+conf small = -2
+
+goal to go from conf big to conf small through lowering loss (value after =). because -2 < -0.004 it works
+
+22. gradient is the exact shape of tempimg...
+
+23: note for future: tape can be set to persitent, to maybe calculate over many iterations..
+
+24. having one dimension -> fucks everything up. having more? works??? wtf.
+gradient = tape.gradient(tf_score, tempimg2) WORKS
+gradient = tape.gradient(tf.math.reduce_max(tf_score), tempimg2) BREAKS
+
+25. tried their loss overlayed over our data ... nothing
+
+26. cant gradient over ipass..
+
+27. totalbox var assign didn't work..
+
+28. maybe first dimensions have to match?? cause with score it works if both are 1
+
+29. https://www.tensorflow.org/guide/autodiff#getting_a_gradient_of_none
+
+30. the key doesn't seem to lie in the shape either -> can fill a tensor to the first dimension of the image, using the same score, and it still won't help. maybe because it's artificial, other methods don't work either
+
+31. tf_out2[1, :], despite LITERALLY being tf_score, causes the gradient to break. 
+
+ASSUMPTION: indexing breaks gradients. FALSE: tf_out[0] still works.
+ASSUMPTION: ":" breaks gradients, as it has to transform into numpy to execute.
+a is b for a tensor, b indexed tensor using a : is false.
+UPDATE: ANY INDEXING BREAKS GRADIENTS AS IT'S NO LONGER THE SAME OBJECT.
+FALSE: their attack file still works.
+
+32. WTF: 
+WORKS:   tf.transpose(self._onet(tf_tempimg2)[2])[1, :][0]
+DOESN'T: tf_out = self._onet(tf_tempimg2)
+         tf_out2 = tf.transpose(tf_out[2])
+         tf_score = tf_out2[1, :]
+         b = tf_score[0]
+
+33. Looks like it caches the output of gradient! Score.
+
+34. It sorta works. sorta. I'm feeling dubious towards the whole thing, because the placement of modifications - of the gradient - corresponds to the 'positions' where the score is obtained - so it only changes a part of the image that somehow corresponds to the good score obtained. maybe it's intentional but it feels somehow wrong, but i'm not sure how it works inside the layer so imma let it slide for now.
+
+NEXT!!!!!: MAKE THIS WORK, outside of its direct context... oof.
+
+35. Make it respond to... patch?

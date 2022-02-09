@@ -1,0 +1,3 @@
+    US              vs            THEM
+1. same patch             different patch every time 
+2. 
