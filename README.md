@@ -5,4 +5,4 @@ Run it by calling:
   1. conda activate MTCNN
   2. python3 test.py
   
-For the O-MTCNN attack, the main file to be modified is mtcnn.py in the folder mtcnn. 
+For the P-MTCNN attack, the main file to be modified is mtcnn.py in the folder mtcnn. 
