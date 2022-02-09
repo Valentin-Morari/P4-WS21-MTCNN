@@ -1,4 +1,4 @@
-name: MTCNN
+name: MTCNN-ONET
 channels:
   - conda-forge
   - defaults
