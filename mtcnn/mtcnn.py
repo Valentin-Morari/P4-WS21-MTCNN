@@ -1131,7 +1131,7 @@ class MTCNN(object):
     def __new_stage3(self, img, total_boxes, stage_status: StageStatus):
       
       with self.tape as tape:
-        
+        tf_img = tf.cast(img, dtype=tf.float32)
         self.patch = tf.cast(self.patch, dtype=tf.float32)
         tape.watch(self.patch)
         
@@ -1177,6 +1177,8 @@ class MTCNN(object):
         #print(self.patch)
         #print("______________________________________")
 
+
+        
         num_boxes = total_boxes.shape[0]
         if num_boxes == 0:
             return total_boxes, np.empty(shape=(0,))  # it's just face points - can be left on np
@@ -1187,52 +1189,31 @@ class MTCNN(object):
                              width=stage_status.width, height=stage_status.height)
 
         tempimg = np.zeros((48, 48, 3, num_boxes))
-
-        """
-        tf_total_boxes = tf.experimental.numpy.fix(total_boxes)
+        
+        tf_tempimg = tf.zeros((48, 48, 3, num_boxes))
+        
+        tf_total_boxes = tf.cast(total_boxes, dtype=tf.float32) #maybe requires pre-setting
+        tf_total_boxes = tf.experimental.numpy.fix(tf_total_boxes)
         tf_total_boxes = tf.cast(tf_total_boxes, dtype=tf.int32)
 
-        status = StageStatus(self.__tf_pad(tf_total_boxes, stage_status.width, stage_status.height),
+        tf_status = StageStatus(self.__tf_pad(tf_total_boxes, stage_status.width, stage_status.height),
                              width=stage_status.width, height=stage_status.height)
 
         #        return tf_dy, tf_edy, tf_dx, tf_edx, y, ey, x, ex, tmpw, tmph
 
-        tempimg = tf.zeros((48, 48, 3, num_boxes))
-        tf_tempimg = tf.zeros((48, 48, 3, num_boxes))
-
-        #print(tempimg, tf_tempimg)
+        tf_tempimgs = []
 
         for k in range(0, num_boxes):
 
-            tf_tmp = tf.zeros((int(status.tmph[k]), int(status.tmpw[k]), 3))
-            print(tf_tmp)
-            #tmp = tf.where(y < 1) # used to be a condition
-            tf_tmp_flat = tf.expand_dims(tf.reshape(tf_tmp,[-1]), 1) #took out gather
-            tf_i_1 = tf.range(status.dy[k] - 1, status.edy[k])
-            tf_i_2 = tf.range(status.dx[k] - 1, status.edx[k])
-            tf_i_3 = tf.range(0, tf_tmp.shape[2])
-            tf_index = [tf_i_1, tf_i_2, tf_i_3]
+            tf_tmp = tf_img[tf_status.y[k] - 1:tf_status.ey[k], tf_status.x[k] - 1:tf_status.ex[k], :]
 
-            tf_j_1 = tf.range(status.y[k] - 1, status.ey[k])
-            tf_j_2 = tf.range(status.x[k] - 1, status.ex[k])
-            tf_j_3 = tf.range(0, img.shape[2])
-            tf_mod_index = [tf_j_1, tf_j_2, tf_j_3]
-            print(img.shape)
-            #, tf_mod_index.shape)
-            tf_tmp_mod = tf.gather(img, tf_mod_index)
-
-            tf_tmp = tf.tensor_scatter_nd_update(tf_tmp_flat, tf_index, tf_tmp_mod)
-            print(tf_tmp)
-            #y = tf.clip_by_value(y, 1, tf.int32.max)
-            tmp[status.dy[k] - 1:status.edy[k], status.dx[k] - 1:status.edx[k], :] = \
-                img[status.y[k] - 1:status.ey[k], status.x[k] - 1:status.ex[k], :]
-
-            if tmp.shape[0] > 0 and tmp.shape[1] > 0 or tmp.shape[0] == 0 and tmp.shape[1] == 0:
-                tempimg[:, :, :, k] = cv2.resize(tmp, (48, 48), interpolation=cv2.INTER_AREA)
+            if tf_tmp.shape[0] > 0 and tf_tmp.shape[1] > 0 or tf_tmp.shape[0] == 0 and tf_tmp.shape[1] == 0:
+                tf_tempimgs.append(tf.image.resize(tf_tmp, (48, 48), method = 'area'))
             else:
-                return np.empty(shape=(0,)), np.empty(shape=(0,))
-        """
-
+                return tf.empty(shape=(0,))
+        
+        tf_tempimg = tf.stack(tf_tempimgs, 3)
+        
         for k in range(0, num_boxes):
 
             tmp = np.zeros((int(status.tmph[k]), int(status.tmpw[k]), 3))
@@ -1240,14 +1221,14 @@ class MTCNN(object):
             tmp[status.dy[k] - 1:status.edy[k], status.dx[k] - 1:status.edx[k], :] = \
                 self.__tf_apply_patch(img, self.patch, self.ground_truths_of_image)[status.y[k] - 1:status.ey[k], status.x[k] - 1:status.ex[k], :]
 
-            if tmp.shape[0] > 0 and tmp.shape[1] > 0 or tmp.shape[0] == 0 and tmp.shape[1] == 0:
+            if tmp.shape[0] > 0 and tmp.shape[1] > 0 or tmp.shape[0] == 0 and tmp.shape[1] == 0:                
                 tempimg[:, :, :, k] = cv2.resize(tmp, (48, 48), interpolation=cv2.INTER_AREA)
+                
             else:
                 print('oh no')
                 return tf.empty(shape=(0,)), np.empty(shape=(0,))
-
-        tf_tempimg = tf.cast(tempimg,
-                             dtype=tf.float32)  # similar to attack - first resize in np then finish operations in tf
+        
+        
         tf_tempimg = (tf_tempimg - 127.5) * 0.0078125
         tf_tempimg1 = tf.transpose(tf_tempimg, (3, 1, 0, 2))
         tf_tempimg2 = tf.Variable(tf_tempimg1, dtype=tf.float32)
@@ -1358,7 +1339,7 @@ class MTCNN(object):
                 if score == tf_outie[i]:
                     indices.append(i)
 
-        tf_outie = tf.gather(tf.transpose(self._onet(tf_tempimg2)[2])[1, :], indices) #THIS REPRESENTS THE FINAL CONFIDENCE SCORES FOR THE IMAGE 
+        tf_outie = tf.gather(tf.transpose(self._onet(tf_tempimg2)[2])[1, :], indices)
 
         """
         # Comment for Tensorflow, uncomment for Regular Numpy
@@ -1374,10 +1355,10 @@ class MTCNN(object):
 
         # print(a.shape, b.shape, type(a), type(b), a, b, a is b)
 
-      gradient = tape.gradient(tf_outie, tf_tempimg2)
+      gradient = tape.gradient(tf_outie, self.patch)
 
-      # print(gradient.shape, self.patch.shape)
+      print(gradient.shape, self.patch.shape)
       # gradient = tape.gradient(tf_total_boxes[:,4], tempimg2)
-      print(gradient.shape, tf_tempimg2.shape)
+      # print(gradient.shape, tf_tempimg2.shape)
       # print(gradient)
       return tf_total_boxes, tf_points
