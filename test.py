@@ -7,6 +7,7 @@ import cv2
 import pkg_resources
 import matplotlib.patches as mpatches
 import os
+import math
 
 # keras_scratch_graph problem
 # gpu version
@@ -148,7 +149,7 @@ def rerec(bbox):
 
     v21 = bbox[:, 0] + width * 0.5 - max_side_length * 0.5 # This should be x of a bounding box
     v22 = bbox[:, 1] + height * 0.5 - max_side_length * 0.5 # This should be y of a bounding box
-    v23 = bboxnp[:, 0:2] + tf.transpose(tf.tile([max_side_length], [2, 1]))
+    v23 = bbox[:, 0:2] + tf.transpose(tf.tile([max_side_length], [2, 1]))
     confidences = bbox[:, 4] # This are the confidence scores
 
     bbox = tf.stack([v21, v22, v23[:, 0], v23[:, 1], confidences], axis=1) ### !!!!!!!!!!!!! look again
@@ -171,8 +172,10 @@ def process_pnet_result(pnet_result):
 
     picktf = tf.cast(pick, dtype=tf.int32) #I have to use the type tf.int32 and not tf.int16
 
-    if tf.size(boxes) > 0 and tf.size(pick) > 0:
-        boxes = tf.gather(boxes, indices=picktf)
+    tf_pick = tf.image.non_max_suppression(tf.identity(boxes[:, 0:4]), tf.identity(boxes[:, 4]), 100, iou_threshold=0.5)
+
+    if tf.size(boxes) > 0 and tf.size(tf_pick) > 0:
+        boxes = tf.gather(boxes, indices=tf_pick)
         total_boxes = tf.concat([total_boxes, boxes], axis=0)
 
     numboxes = total_boxes.shape[0]
@@ -190,14 +193,16 @@ def process_pnet_result(pnet_result):
         qq3 = total_boxes[:, 2] + total_boxes[:, 7] * regw
         qq4 = total_boxes[:, 3] + total_boxes[:, 8] * regh
 
-        total_boxes = np.transpose(np.vstack([qq1, qq2, qq3, qq4, total_boxes[:, 4]]))
-        total_boxestf = tf.transpose(tf.concat([[qq1], [qq2], [qq3], [qq4], [total_boxes[:, 4]]], axis=0)) # tf.concat(value, axis=0) is counterpart of the numpy function np.vstack() in Tensorflow and every element is put into brackets to be like the original from mtcnn
+        total_boxes = tf.transpose(tf.concat([[qq1], [qq2], [qq3], [qq4], [total_boxes[:, 4]]],
+                                             axis=0))  # tf.concat(value, axis=0) is counterpart of the numpy function np.vstack() in Tensorflow and every element is put into brackets to be like the original from mtcnn
 
-        total_boxestf = rerec(tf.identity(total_boxestf))
+        total_boxes = rerec(tf.identity(total_boxes))
 
-        total_boxestf_03 = tf.floor(total_boxestf[:, 0:4])#np.fix(total_boxes[:, 0:4]).astype(np.int32)
-        total_boxestf_4 = total_boxestf[:, 4]
-        total_boxestf = tf.stack([total_boxestf_03[:, 0], total_boxestf_03[:, 1], total_boxestf_03[:, 2], total_boxestf_03[:, 3], total_boxestf_4], axis=1)
+        total_boxes_03 = tf.floor(total_boxes[:, 0:4])  # np.fix(total_boxes[:, 0:4]).astype(np.int32)
+        total_boxes_4 = total_boxes[:, 4]
+        total_boxes = tf.stack(
+            [total_boxes_03[:, 0], total_boxes_03[:, 1], total_boxes_03[:, 2], total_boxes_03[:, 3], total_boxes_4],
+            axis=1)
 
     return total_boxestf
 
@@ -262,7 +267,6 @@ def create_adversarial_pattern(image, label):
     #print(gradient)
     # Normalization, all gradient divide the max gradient's absolute value
     #norm_gradient = tf.math.divide(gradient, tf.math.reduce_max(tf.math.abs(gradient)))
-    # print(type(gradient))
     return gradient, loss#norm_gradient, loss
 
 
@@ -297,6 +301,100 @@ def createMask(results, image):
 
     mask = np.repeat(mask[..., np.newaxis], 3, 2)
     return mask, mask_x1, mask_x2, mask_y1, mask_y2
+
+
+def my_createMask(results, image):
+    '''
+
+    :param results: result of mtcnn for the given image
+    :param image: image to which the patch will be applied to in future functions
+    :return: the adversial "mask" with it's coordinates mask_x1, mask_x2, mask_y1, mask_y2
+    '''
+
+    '''
+    Originally attack only uses Images with only one face. This addition adds patches to all found faces.
+    '''
+    if len(results) == 1: # With this bounding_boxes is always 2 dimensional
+        bounding_boxes = np.array([results[0]['box']])
+    else:
+        bounding_boxes = np.empty((0, 4), int)  # CHANGE I'm not sure if using np.empty is safe
+
+        for i in range(len(result)):
+            bounding_boxes = np.append(bounding_boxes, np.array([result[i]['box']]), axis=0)
+
+    mask = np.zeros((image.shape[0], image.shape[1]))
+
+    alpha = 0.5
+
+    for bounding_box in bounding_boxes:
+        x, y, width, height = bounding_box
+
+        resize_value = alpha * math.sqrt(width * height)
+
+        x_P = round(width / 2)
+        y_P = round(resize_value/ 2)
+
+        # Patch coordinate
+        mask_x1 = x_P + x - round(resize_value / 2)
+        mask_x2 = x_P + x - round(resize_value / 2) + round(resize_value) # have to round resize_value because its a float
+        mask_y1 = y_P + y - round(resize_value / 2)
+        mask_y2 = y_P + y - round(resize_value / 2) + round(resize_value) # have to round resize_value because its a float
+
+        '''
+        We need to look if this also happens with our Patch!!!!! This should not happen using the real ground truths.
+        '''
+        if mask_y1 < 0:
+            mask_y1 = 0
+        if mask_x1 < 0:
+            mask_x1 = 0
+
+        mask[mask_y1:mask_y2, mask_x1:mask_x2] = 1
+    # frame_patch
+    # mask[y1:y2, x1:x2] = 0
+
+    mask = np.repeat(mask[..., np.newaxis], 3, 2)
+    return mask, mask_x1, mask_x2, mask_y1, mask_y2
+
+
+def tf_apply_patch(img, patch, ground_truths_of_image):
+    """
+    Applies the patch to the image. Please use this Function only in new_detect_faces().
+
+    :param img: The original image
+    :param patch: The adversial patch
+    :param ground_truths_of_image: Ground truth bounding boxes of the image, i.e. the marked faces
+    :return: The original image but with the patch placed, dependet on where the ground truths are given
+    """
+    #adv_img = copy.deepcopy(img)
+    tf_adv_img = tf.cast(img, dtype=tf.float32)
+
+    alpha = 0.5
+
+    # draw detected face + plaster patch over source
+    for bounding_box in ground_truths_of_image:  # ground truth loop
+
+        resize_value = alpha * math.sqrt(bounding_box[2] * bounding_box[3]) #CHANGE! need to remove math
+        tf_resized_P = tf.image.resize(patch, (round(resize_value), round(resize_value)))
+
+        x_P = round(bounding_box[2] / 2)
+        y_P = round(resize_value / 2)
+
+        adv_img_rows = tf_adv_img.shape[0]
+        adv_img_cols = tf_adv_img.shape[1]
+
+        # Finding the indices where to put the patch
+        y_start = y_P + bounding_box[1] - round(tf_resized_P.shape[1] / 2)  # bounding_box[0]
+        x_start = x_P + bounding_box[0] - round(tf_resized_P.shape[0] / 2)  # bounding_box[1]
+        y_end = y_P + bounding_box[1] - round(tf_resized_P.shape[1] / 2) + tf_resized_P.shape[
+            1]
+        x_end = x_P + bounding_box[0] - round(tf_resized_P.shape[0] / 2) + tf_resized_P.shape[
+            0]
+
+        tf_overlay = tf_resized_P - tf_adv_img[y_start:y_end, x_start:x_end]
+        tf_overlay_pad = tf.pad(tf_overlay, [[y_start, adv_img_rows - y_end], [x_start, adv_img_cols - x_end], [0, 0]])
+        tf_adv_img = tf_adv_img + tf_overlay_pad
+
+    return tf_adv_img
 
 
 def getPerturbationRGB(image, imageWithPerturbations):
@@ -366,7 +464,7 @@ def iterative_attack(adv_image, label, mask, scale, grayscale, learning_rate, sc
 for distance in range(1, 2): # CHANGED
     allFileList = os.listdir('./patch_img')
     pictureList = os.listdir('./picture/{}M/normal'.format(distance))
-    true_box_info = np.load('./picture/{}M/normal/info.npy'.format(distance), allow_pickle=True)
+    true_box_info = np.load('./picture/{}M/normal/info_changed.npy'.format(distance), allow_pickle=True)
     grayscale = False
 
     for file in allFileList:
@@ -385,13 +483,9 @@ for distance in range(1, 2): # CHANGED
             image = tf.keras.preprocessing.image.img_to_array(image)
             patch = tf.keras.preprocessing.image.img_to_array(patch)
 
-            if grayscale == True:
-                patch[:, :, 0] = patch[:, :, 1] = patch[:, :, 2] = (
-                    patch[:, :, 0] + patch[:, :, 1] + patch[:, :, 2]) // 3
-
             result = detector.detect_faces(image)
 
-            mask, mask_x1, mask_x2, mask_y1, mask_y2 = createMask(result, image)
+            mask, mask_x1, mask_x2, mask_y1, mask_y2 = my_createMask(result, image)
             
             # Add code to mtcnn.py to output all scales
             # Pack them to 'scales.npy'
@@ -400,6 +494,11 @@ for distance in range(1, 2): # CHANGED
             image2 = image.copy()
 
             patch = cv2.resize(patch, (abs(mask_x1-mask_x2), abs(mask_y1-mask_y2)))
+
+            storePatch = patch
+            cv2.imwrite(
+                'result/patch/rgb/mouth/normal/{}M/'.format(distance) + "_supp_" + patch_name + '_' + pic_name + '.jpg',
+                storePatch[:, :, [2, 1, 0]])
 
             image2[mask_y1:mask_y2, mask_x1:mask_x2] = patch
             # frame_patch
@@ -431,6 +530,10 @@ for distance in range(1, 2): # CHANGED
 
                     tempImg = show_img - show_img * mask
 
+                    cv2.imwrite('result/patch/rgb/mouth/normal/{}M/'.format(
+                        distance) + "_tempIMG_" + patch_name + '_' + pic_name + '.jpg',
+                                tempImg[:, :, [2, 1, 0]])
+
                     adv_image = imageChangeToFitPnet(show_img, scale)
 
                     label = createLabel(image, scale)
@@ -439,11 +542,11 @@ for distance in range(1, 2): # CHANGED
 
                     perturbationsRGB = getPerturbationRGB(image, perturbations.numpy())
 
-                    if grayscale == True:
-                        perturbationsRGB[:, :, 0] = perturbationsRGB[:, :, 1] = perturbationsRGB[:, :, 2] = (
-                            perturbationsRGB[:, :, 0] + perturbationsRGB[:, :, 1] + perturbationsRGB[:, :, 2]) // 3
-
                     show_img = tempImg + perturbationsRGB
+
+                    cv2.imwrite('result/patch/rgb/mouth/normal/{}M/'.format(
+                        distance) + "_show_img_" + patch_name + '_' + pic_name + '.jpg',
+                                show_img[:, :, [2, 1, 0]])
 
                     show_img = np.where(show_img < 0, 0, show_img)
                     show_img = np.where(show_img > 255, 255, show_img)
