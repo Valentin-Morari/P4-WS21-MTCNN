@@ -31,56 +31,18 @@ def scale_image(image, scale):
 
 
 def generate_bounding_box(imap, reg, scale, t):
-
         # use heatmap to generate bounding boxes
         stride = 2
         cellsize = 12
 
         imap = tf.transpose(imap)
 
-        '''
-        dx1 = np.transpose(reg[:, :, 0])
-        dy1 = np.transpose(reg[:, :, 1])
-        dx2 = np.transpose(reg[:, :, 2])
-        dy2 = np.transpose(reg[:, :, 3])
-        '''
-
         dx1tf = tf.transpose(reg[:, :, 0])
         dy1tf = tf.transpose(reg[:, :, 1])
         dx2tf = tf.transpose(reg[:, :, 2])
         dy2tf = tf.transpose(reg[:, :, 3])
 
-        '''
-        #print(imap)
-        imap_np = imap.numpy()
-        #print(imap_np)
-        y, x = np.where(imap_np >= t)
-        '''
-
         positives = tf.where(tf.greater_equal(imap, t))
-
-        '''
-        #
-        Don't know tight know if we need this when we use the tensorflow method
-        It looks like tf.image.flip_up_down() does the same es np.flipud()
-        if y.shape[0] == 1:
-            dx1 = np.flipud(dx1)
-            dy1 = np.flipud(dy1)
-            dx2 = np.flipud(dx2)
-            dy2 = np.flipud(dy2)
-
-        if len(positives) == 1:
-            dx1 = tf.image.flip_up_down(dx1)
-            dy1 = tf.image.flip_up_down(dy1)
-            dx2 = tf.image.flip_up_down(dx2)
-            dy2 = tf.image.flip_up_down(dy2)
-        '''
-
-        '''
-        score = imap_np[(y, x)]
-        
-        reg = np.transpose(np.vstack([dx1[(y, x)], dy1[(y, x)], dx2[(y, x)], dy2[(y, x)]]))
-        '''
 
         scoretf = tf.gather_nd(imap, positives)
 
@@ -89,38 +51,16 @@ def generate_bounding_box(imap, reg, scale, t):
                           axis=0) # tf.concat(value, axis=0) is counterpart of the numpy function np.vstack() in Tensorflow and every element is put into brackets to be like the original from mtcnn
         regtf = tf.transpose(regtf)
 
-        #print(reg.size)
-        #print(tf.size(regtf))
+
         if tf.size(regtf) == 0:
             regtf = tf.reshape(tf.convert_to_tensor(()), (0, 3)) # not sure if I can port this to tensorflow
 
-
-        '''
-        bb = np.transpose(np.vstack([y, x]))
-
-        q1 = np.fix((stride * bb + 1) / scale)
-        q2 = np.fix((stride * bb + cellsize) / scale)
-        
-        boundingbox = np.hstack([q1, q2, np.expand_dims(score, 1), reg])
-        '''
-
         bbtf = positives
-
 
         q1tf = tf.floor((stride * tf.cast(bbtf, dtype=tf.float32) + 1.) / scale)
         q2tf = tf.floor((stride * tf.cast(bbtf, dtype=tf.float32) + cellsize) / scale)
 
         boundingboxtf = tf.concat([q1tf, q2tf, tf.expand_dims(scoretf, 1), regtf], axis=1) # tf.concat(value, axis=1) is counterpart of the numpy function np.hstack() in Tensorflow
-
-        '''
-        print(boundingbox)
-        print(boundingboxtf)
-
-        if boundingboxtf.numpy().all() == boundingbox.all():
-            print("boundingboxtf == boundingbox -> TRUE")
-        else:
-            print("boundingboxtf == boundingbox -> FALSE")
-        '''
 
         return boundingboxtf, regtf
 
@@ -178,8 +118,6 @@ def nms(boxes, threshold, method):
             y2idx.append(y2[j])
         yy2 = tf.math.minimum(y2[i], y2idx)
 
-        # print('all fakes',xx1,xx2,yy1,yy2)
-
         w = tf.math.maximum(0.0, xx2 - xx1 + 1)
         h = tf.math.maximum(0.0, yy2 - yy1 + 1)
 
@@ -203,58 +141,23 @@ def nms(boxes, threshold, method):
 
 def rerec(bbox):
     # convert bbox to square
-    #print(bbox)
-    bboxnp = bbox.numpy()
-    heightnp = bboxnp[:, 3] - bboxnp[:, 1]
-    widthnp = bboxnp[:, 2] - bboxnp[:, 0]
-    max_side_lengthnp = np.maximum(widthnp, heightnp)
-    bboxnp[:, 0] = bboxnp[:, 0] + widthnp * 0.5 - max_side_lengthnp * 0.5
-    bboxnp[:, 1] = bboxnp[:, 1] + heightnp * 0.5 - max_side_lengthnp * 0.5
-    bboxnp[:, 2:4] = bboxnp[:, 0:2] + np.transpose(np.tile(max_side_lengthnp, (2, 1)))
-    #print("HELP:")
-    #print(tf.cast(bboxnp[:, 2:4], dtype=tf.float32))
-    #print(tf.cast(np.transpose(np.tile(max_side_lengthnp, (2, 1))), dtype=tf.float32))
 
     height = bbox[:, 3] - bbox[:, 1]
     width = bbox[:, 2] - bbox[:, 0]
     max_side_length = tf.maximum(width, height)
-    #print(tf.tile(max_side_length, [1]))
-    #print(tf.transpose(tf.tile(max_side_length, [1])))
+
     v21 = bbox[:, 0] + width * 0.5 - max_side_length * 0.5 # This should be x of a bounding box
-    #print("X1:")
-    #print(v21)
     v22 = bbox[:, 1] + height * 0.5 - max_side_length * 0.5 # This should be y of a bounding box
-    #print("Y1:")
-    #print(v22)
     v23 = bboxnp[:, 0:2] + tf.transpose(tf.tile([max_side_length], [2, 1]))
-    #print("Y:")
-    #print(v23[:, 0])
-    #print(v23[:, 1])
     confidences = bbox[:, 4] # This are the confidence scores
-    #print("CONFIDENCE:")
-    #print(confidences)
+
     bbox = tf.stack([v21, v22, v23[:, 0], v23[:, 1], confidences], axis=1) ### !!!!!!!!!!!!! look again
-    #tf.concat([[tf.gather_nd(dx1tf, positives)], [tf.gather_nd(dy1tf, positives)],
-     #          [tf.gather_nd(dx2tf, positives)], [tf.gather_nd(dy2tf, positives)]],
-      #        axis=0)
-
-    '''
-    print(bboxnp)
-    print(bbox)
-
-    #Don't forget to test the shape!!!
-    if (bbox.numpy().all() == bboxnp.all()) & (bbox.numpy().shape[0] == bboxnp.shape[0]):
-        print("bbox == bboxnp -> TRUE")
-    else:
-        print("bbox == bboxnp -> FALSE")
-    '''
 
     return bbox
 
 
 def process_pnet_result(pnet_result):
     total_boxes = tf.reshape(tf.convert_to_tensor(()), (0, 9))
-    total_boxestf = tf.reshape(tf.convert_to_tensor(()), (0, 9))
 
     scale_factor = 0.709 # Set like mtcnn __init__ did
     steps_threshold = [0.6, 0.7, 0.7] # Set like mtcnn __init__ did
@@ -264,28 +167,15 @@ def process_pnet_result(pnet_result):
 
     boxes, _ = generate_bounding_box(tf.identity(out1[0, :, :, 1]), tf.identity(out0[0, :, :, :]), scale_factor, steps_threshold[0]) # tf.identity should be the counterpart of numpy.copy
 
-    #print(boxes)
     pick = nms(tf.identity(boxes), 0.5, 'Union') # tf.identity should be the counterpart of numpy.copy
-    #print(pick)
+
     picktf = tf.cast(pick, dtype=tf.int32) #I have to use the type tf.int32 and not tf.int16
 
     if tf.size(boxes) > 0 and tf.size(pick) > 0:
         boxes = tf.gather(boxes, indices=picktf)
-        #print(boxes)
         total_boxes = tf.concat([total_boxes, boxes], axis=0)
-        #print(total_boxes)
 
-    '''
-    boxesnp = boxes.numpy()
-    print(boxes.numpy().shape[0])
-    print(boxesnp.shape[0])
-    if (boxes.numpy().all() == boxesnp.all()) & (boxes.numpy().shape[0] == boxesnp.shape[0]):
-        print("boxes == boxesnp -> TRUE")
-    else:
-        print("boxes == boxesnp -> FALSE")
-    '''
-
-    numboxes = total_boxes.shape[0] #WARUM GEHT DAS
+    numboxes = total_boxes.shape[0]
 
     if numboxes > 0:
         pick = nms(tf.identity(total_boxes), 0.7, 'Union') # tf.identity should be the counterpart of numpy.copy
@@ -303,23 +193,11 @@ def process_pnet_result(pnet_result):
         total_boxes = np.transpose(np.vstack([qq1, qq2, qq3, qq4, total_boxes[:, 4]]))
         total_boxestf = tf.transpose(tf.concat([[qq1], [qq2], [qq3], [qq4], [total_boxes[:, 4]]], axis=0)) # tf.concat(value, axis=0) is counterpart of the numpy function np.vstack() in Tensorflow and every element is put into brackets to be like the original from mtcnn
 
-        #print(total_boxes)
-        #print(total_boxestf)
-
-        '''    
-        if total_boxestf.numpy().all() == total_boxes.all():
-            print("total_boxestf == total_boxes -> TRUE")
-        '''
-
         total_boxestf = rerec(tf.identity(total_boxestf))
-
-        #print(total_boxestf)
 
         total_boxestf_03 = tf.floor(total_boxestf[:, 0:4])#np.fix(total_boxes[:, 0:4]).astype(np.int32)
         total_boxestf_4 = total_boxestf[:, 4]
         total_boxestf = tf.stack([total_boxestf_03[:, 0], total_boxestf_03[:, 1], total_boxestf_03[:, 2], total_boxestf_03[:, 3], total_boxestf_4], axis=1)
-        #print(total_boxestf)
-        #status = StageStatus(self.__pad(total_boxes.copy(), stage_status.width, stage_status.height), width=stage_status.width, height=stage_status.height)
 
     return total_boxestf
 
@@ -364,25 +242,22 @@ def createLabel(image, scale):
 def create_adversarial_pattern(image, label):
     with tf.GradientTape() as tape:
         tape.watch(image)
-        #print(pnet_attacked(image))
-        #prediction = pnet_attacked(image)[0][0, :, :, :]
-        #prediction = pnet_attacked(image)[1][0, :, 0, 0]# The Confidence Scores
+
         pnet_probe = pnet_attacked(image)
         probe = process_pnet_result(pnet_probe)
-        #print("###########################")
-        #print(probe[:, 4])
-        #print("###########################")
-        #print(prediction)
+
         confidence_scores = tf.convert_to_tensor(probe[:, 4], dtype=tf.float32)
         loss = loss_object(label, confidence_scores) #label will be needed for the IOU later
         print("LOSS: ")
         print(loss)
     # Get the gradients of the loss to the input image
     gradient = tape.gradient(loss, image)
+    '''
     if gradient.numpy().any() != 0:
         print(True)
     else:
         print(False)
+    '''
     #print("GRADIANT: ")
     #print(gradient)
     # Normalization, all gradient divide the max gradient's absolute value
@@ -466,16 +341,18 @@ def iterative_attack(adv_image, label, mask, scale, grayscale, learning_rate, sc
         adv_image = tf.where(adv_image > upperBound, upperBound, adv_image) # everything bigger than +1 is cast to +1
 
 
-        # Optimizer
-#        if maxloss < loss:
-#            maxloss = loss
-#            count = 0
-#        else:
-#            count += 1
-#        if count > 2:
-#            if learning_rate[scaleNum] > 0.01:
-#                learning_rate[scaleNum] /= 2
-#            count = 0
+        '''
+        # Original Optimizer of attack.py
+        if maxloss < loss:
+            maxloss = loss
+            count = 0
+        else:
+            count += 1
+        if count > 2:
+            if learning_rate[scaleNum] > 0.01:
+                learning_rate[scaleNum] /= 2
+            count = 0
+        '''
 
         if epoch == 60:
             learning_rate = learning_rate * 0.1
