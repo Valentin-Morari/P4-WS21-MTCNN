@@ -204,7 +204,7 @@ def process_pnet_result(pnet_result):
             [total_boxes_03[:, 0], total_boxes_03[:, 1], total_boxes_03[:, 2], total_boxes_03[:, 3], total_boxes_4],
             axis=1)
 
-    return total_boxestf
+    return total_boxes
 
 def loss_object(label, predict_box):
     #print(label)
@@ -406,7 +406,7 @@ def getPerturbationRGB(image, imageWithPerturbations):
     return temp * mask
 
 
-def iterative_attack(adv_image, label, mask, scale, grayscale, learning_rate, scaleNum):
+def iterative_attack(adv_image, label, mask, scale, learning_rate, scaleNum): #CHANGED: Removed GRAYSCALE
 
     upperBound = (255 - 127.5) * 0.0078125 # ~ +1
     lowerBound = (0 - 127.5) * 0.0078125 # ~ -1
@@ -428,10 +428,6 @@ def iterative_attack(adv_image, label, mask, scale, grayscale, learning_rate, sc
 
         perturbations, loss = create_adversarial_pattern(adv_image, label)
         perturbations = perturbations.numpy()
-
-        if grayscale == True:
-            perturbations[:, :, 0] = perturbations[:, :, 1] = perturbations[:, :, 2] = (
-                perturbations[:, :, 0] + perturbations[:, :, 1] + perturbations[:, :, 2]) // 3
 
         adv_image = adv_image + \
             learning_rate[scaleNum] * (perturbations * my_mask)
@@ -465,7 +461,6 @@ for distance in range(1, 2): # CHANGED
     allFileList = os.listdir('./patch_img')
     pictureList = os.listdir('./picture/{}M/normal'.format(distance))
     true_box_info = np.load('./picture/{}M/normal/info_changed.npy'.format(distance), allow_pickle=True)
-    grayscale = False
 
     for file in allFileList:
         patch_name = file.split('.')[0]
@@ -519,7 +514,7 @@ for distance in range(1, 2): # CHANGED
 
             for i in range(10):
                 print("*****")
-                print("Iteration: %d", i)
+                print("Iteration: %d", i, "of Picture:", pic_name)
                 # Pick three scale to train for each distance
                 for scaleNum in range(3):
                     print('start')
@@ -538,7 +533,7 @@ for distance in range(1, 2): # CHANGED
 
                     label = createLabel(image, scale)
 
-                    perturbations = iterative_attack(adv_image, label, mask, scale, grayscale, learning_rate, scaleNum)
+                    perturbations = iterative_attack(adv_image, label, mask, scale, learning_rate, scaleNum)
 
                     perturbationsRGB = getPerturbationRGB(image, perturbations.numpy())
 
