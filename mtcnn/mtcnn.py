@@ -42,6 +42,36 @@ from mtcnn.network.factory import NetworkFactory
 
 __author__ = "Iván de Paz Centeno"
 
+def IoU(boxA,
+        boxB):  # Code taken directly from https://www.pyimagesearch.com/2016/11/07/intersection-over-union-iou-for-object-detection/
+    # determine the (x, y)-coordinates of the intersection rectangle
+    # print("BoxA: ")
+    # print(boxA)
+    # print("BoxB: ")
+    # print(boxB)
+
+    lambda_IoU = 0.6  # To match paper's concrete parameters
+
+    xA = max(boxA[0], boxB[0])
+    yA = max(boxA[1], boxB[1])
+    # MTCNN doesn't give the end points in [2] and [3] but the distance from the start point to the end point
+    xB = min(boxA[0] + boxA[2], boxB[0] + boxB[2])
+    yB = min(boxA[1] + boxA[3], boxB[1] + boxB[3])
+    # print("xA = %d -- yA = %d -- xB = %d -- yB = %d" % (xA,yA,xB,yB))
+    # compute the area of intersection rectangle
+    interArea = max(0, xB - xA + 1) * max(0, yB - yA + 1)
+    # compute the area of both the prediction and ground-truth
+    # rectangles
+    boxAArea = (boxA[2]) * (boxA[3])
+    boxBArea = (boxB[2]) * (boxB[3])
+    # compute the intersection over union by taking the intersection
+    # area and dividing it by the sum of prediction + ground-truth
+    # areas - the interesection area
+    # print("interArea = %d -- boxAArea = %d -- boxBArea = %d" % (interArea, boxAArea, boxBArea))
+    iou = interArea / float(boxAArea + boxBArea - interArea)
+    # return the intersection over union value
+    return iou > lambda_IoU
+
 
 class StageStatus(object):
     """
@@ -52,7 +82,7 @@ class StageStatus(object):
         self.width = width
         self.height = height
         self.dy = self.edy = self.dx = self.edx = self.y = self.ey = self.x = self.ex = self.tmpw = self.tmph = []
-
+        
         if pad_result is not None:
             self.update(pad_result)
 
@@ -90,6 +120,8 @@ class MTCNN(object):
         self._steps_threshold = steps_threshold
         self._scale_factor = scale_factor
 
+        #self.i = 0 # TO REMOVE
+        
         self._pnet, self._rnet, self._onet = NetworkFactory().build_P_R_O_nets_from_file(weights_file)
 
     @property
@@ -525,7 +557,7 @@ class MTCNN(object):
             """
             resize_value = alpha * math.sqrt(bounding_box[2] * bounding_box[3])
             #resized_P = cv2.resize(patch, (round(resize_value), round(resize_value)))
-            tf_resized_P = tf.image.resize(patch, (round(resize_value), round(resize_value)))
+            tf_resized_P = tf.image.resize(patch, (round(resize_value), round(resize_value)), method = 'lanczos5', antialias = True) #tf image resize? LANCZOSinstead of AREA
             #tf_resized_P = tf.cast(resized_P, dtype=tf.float32)
             
             x_P = round(bounding_box[2] / 2)
@@ -614,10 +646,12 @@ class MTCNN(object):
         :return: list containing all the bounding boxes detected with their keypoints.
         """
 
-        self.patch = patch
+        #self.patch = patch
+        self.patch = tf.Variable(patch, dtype=tf.float32)
+        #oldie = tf.Variable(self.patch)
         self.ground_truths_of_image = ground_truths_of_image
 
-        tf_adv_img = self.__tf_apply_patch(img, patch, ground_truths_of_image)
+        tf_adv_img = self.__tf_apply_patch(img, self.patch, ground_truths_of_image)
         #print(type(tf_adv_img), tf_adv_img.shape, tf_adv_img.dtype)
         self.adv_img = tf_adv_img.numpy()
         if self.adv_img is None or not hasattr(self.adv_img, "shape"):
@@ -663,8 +697,11 @@ class MTCNN(object):
                     'mouth_right': (int(keypoints[4]), int(keypoints[9])),
                 }
             })
-
-        return (bounding_boxes, self.adv_img)
+        #newie = tf.Variable(self.patch)
+        #self.adv_img = self.__tf_apply_patch(img, self.patch, ground_truths_of_image).numpy()
+        #print(oldie - newie)
+        #print(self.patch.dtype)
+        return (bounding_boxes, self.adv_img, self.patch)
 
     def __stage1(self, image, scales: list, stage_status: StageStatus):
         """
@@ -1123,8 +1160,8 @@ class MTCNN(object):
     def __new_stage3(self, img, total_boxes, stage_status: StageStatus):
       
       #tf_img = tf.cast(img, dtype=tf.float32)
-      self.patch = tf.Variable(self.patch, dtype=tf.float32)
-      tf_total_boxes = tf.cast(total_boxes, dtype=tf.float32) #maybe requires pre-setting
+      #self.patch = tf.Variable(self.patch, dtype=tf.float32)
+      
       with self.tape as tape:
         tape.watch(self.patch)
         
@@ -1171,13 +1208,31 @@ class MTCNN(object):
         #print("______________________________________")
 
 
+        new_total_boxes = []
         
-        num_boxes = total_boxes.shape[0]
+        """ IoU selection 
+        for box in total_boxes:
+          tmp_box = box.numpy()
+          #print('ORGI', box)
+          tmp_box = np.delete(tmp_box, 4)
+          tmp_box[2] = tmp_box[2] - tmp_box[0]
+          tmp_box[3] = tmp_box[3] - tmp_box[1]
+          for truth_box in self.ground_truths_of_image:
+            #print(tmp_box,truth_box)
+            if IoU(box, truth_box):
+              new_total_boxes.append(box)
+        #print(total_boxes, new_total_boxes)
+        total_boxes = new_total_boxes
+        """
+        num_boxes = len(total_boxes)
+        tf_total_boxes = tf.cast(total_boxes, dtype=tf.float32) #maybe requires pre-setting
+
         if num_boxes == 0:
+            print('no faces detected')
             return total_boxes, np.empty(shape=(0,))  # it's just face points - can be left on np
 
         total_boxes = np.fix(total_boxes).astype(np.int32)
-
+        #print(total_boxes)
         status = StageStatus(self.__pad(total_boxes.copy(), stage_status.width, stage_status.height),
                              width=stage_status.width, height=stage_status.height)
         
@@ -1198,8 +1253,11 @@ class MTCNN(object):
             tf_tmp = tf_img[tf_status.y[k] - 1:tf_status.ey[k], tf_status.x[k] - 1:tf_status.ex[k], :]
             if tf_tmp.shape[0] > 0 and tf_tmp.shape[1] > 0 or tf_tmp.shape[0] == 0 and tf_tmp.shape[1] == 0:
                 #tf_tempimgs.append(tf.image.resize(tf_tmp, (48, 48), method = 'area')) # - The correct one
-                tf_tempimgs.append(tf.image.resize(tf_tmp, (48, 48)))
+                #tf_tempimgs.append(tf.image.resize(tf_tmp, (48, 48))) #method = 'bilinear' is ehhhh sometimes very close, 'lanczos5' is one significant digit off, 
+                tf_tempimgs.append(tf.image.resize(tf_tmp, (48, 48), method = 'lanczos5', antialias = True))
+                
             else:
+                print('tf_tmp is misshapen')
                 return tf.empty(shape=(0,))
         
         tf_tempimg = tf.stack(tf_tempimgs, 3)
@@ -1219,6 +1277,8 @@ class MTCNN(object):
                 print('oh no')
                 return tf.empty(shape=(0,)), np.empty(shape=(0,))
         
+        #print('real',tempimg)
+        #print('fake',tf_tempimg)
         tf_tempimg = (tf_tempimg - 127.5) * 0.0078125
         tf_tempimg2 = tf.transpose(tf_tempimg, (3, 1, 0, 2))
         #tf_tempimg2 = tf.Variable(tf_tempimg1, dtype=tf.float32)
@@ -1235,8 +1295,9 @@ class MTCNN(object):
         # maybe also watch the other variables?
         #tape.watch(tf_tempimg2)
 
-        tf_outie = tf.transpose(self._onet(tf_tempimg2)[2])[1, :]
+        #tf_outie = tf.transpose(self._onet(tf_tempimg2)[2])[1, :]
         # print([var.name for var in self._onet.trainable_variables])
+        out1 = np.transpose(self._onet(tf_tempimg2)[1])
         tf_out = self._onet(tf_tempimg2)  # changed from 1 to 2
         #print([var.name for var in tape.watched_variables()])
 
@@ -1251,6 +1312,7 @@ class MTCNN(object):
 
         tf_ipass = tf.transpose(tf.where(tf_score > self._steps_threshold[2]))
         tf_ipass = tf.cast(tf_ipass, dtype=tf.float32)
+        
         a = []
         # tf_total_boxes[tf_ipass[0], 0:4]
         for e in tf_ipass[0]:
@@ -1258,9 +1320,14 @@ class MTCNN(object):
         b = []
         for e in tf_ipass[0]:
             b.append(tf_score[tf.cast(e, dtype=tf.int64)])
-        c = tf.expand_dims(b, 1)
-
-        tf_total_boxes = tf.concat([a, c], axis=1)
+        c = tf.expand_dims(b, -1)
+        try:
+          tf_total_boxes = tf.concat([a, c], axis=1)
+        except:
+          print('no confidence!')
+          tf_total_boxes = tf.experimental.numpy.empty(0)
+          #print(tf_total_boxes)
+          #return [], out1 #avoids ConcatOp : Expected concatenating dimensions in the range [-1, 1), but got 1 [Op:ConcatV2] - error, when axis = 1
 
         tf_pre_mv = []
         for i in range(len(tf_out0)):
@@ -1292,9 +1359,9 @@ class MTCNN(object):
 
         total_boxes = np.hstack(
             [total_boxes[ipass[0], 0:4].copy(), np.expand_dims(score[ipass].copy(), 1)])  # relevant
+
         mv = out0[:, ipass[0]]  # relevant
         
-        #print(mv, tf_mv)
         w = total_boxes[:, 2] - total_boxes[:, 0] + 1  # not relevant
         h = total_boxes[:, 3] - total_boxes[:, 1] + 1  # not relevant
 
@@ -1302,8 +1369,6 @@ class MTCNN(object):
                                                                        (5, 1)) - 1  # not relevant
         points[5:10, :] = np.tile(h, (5, 1)) * points[5:10, :] + np.tile(total_boxes[:, 1],
                                                                          (5, 1)) - 1  # not relevant
-
-        tf_points = points
         
         # Comment for Tensorflow, uncomment for Regular Numpy
         if total_boxes.shape[0] > 0:
@@ -1312,6 +1377,7 @@ class MTCNN(object):
             total_boxes = total_boxes[pick, :]
             points = points[:, pick]
         
+        tf_points = points
 
         """ tensorflow adaptation - original code commented out to save resources"""
         if tf_total_boxes.shape[0] > 0:
@@ -1320,20 +1386,30 @@ class MTCNN(object):
             tf_pick = self.__tf_nms(tf_total_boxes, 0.7, 'Min')  # also didn't copy
             tf_pick = tf_pick.astype('int32')  # initially is type int16 which tensorflow doesn't support ... for some reason
             tf_total_boxes = tf.gather(tf_total_boxes, tf_pick)
-            tf_points = tf_points[:, tf_pick]  # have to comment out because during comparison to above it breaks stuff  ----- SOMETIMES throws errors: IndexError: index 3 is out of bounds for axis 1 with size 3
+            #tf_points = tf_points[:, tf_pick]  # have to comment out because during comparison to above it breaks stuff  ----- SOMETIMES throws errors: IndexError: index 3 is out of bounds for axis 1 with size 3
+
+        #print(max(abs(np.round(np.amax(tf.transpose(self._onet(tf_tempimg2)[2])[1, :] - score), 2)), abs(np.round(np.amin(tf.transpose(self._onet(tf_tempimg2)[2])[1, :] - score), 2))))
 
         indices = []
-        for score in tf_total_boxes[:, 4]:
-            for i in range(len(tf_outie)):
-                if score == tf_outie[i]:
-                    indices.append(i)
-
-        tf_outie = tf.gather(tf.transpose(self._onet(tf_tempimg2)[2])[1, :], indices)
-
+        tf_outie = tf.transpose(tf_out[2])[1, :]
+        tf_loss = 0
+        
+        if tf_total_boxes.shape[0] > 0:
+          for score in tf_total_boxes[:, 4]:
+              for i in range(len(tf_outie)):
+                  if score == tf_outie[i]:
+                      indices.append(i)
+        #print(tf.gather(tf.transpose(self._onet(tf_tempimg2)[2])[1, :], indices).shape[0])
+        
+        if len(indices):
+          tf_loss = tf.math.negative(tf.divide(tf.math.reduce_sum(tf.math.log(tf.gather(tf.transpose(self._onet(tf_tempimg2)[2])[1, :], indices))), len(indices)))
+        
+        # tf_outie = tf.gather(tf.transpose(self._onet(tf_tempimg2)[2])[1, :], indices)
         """
         # Comment for Tensorflow, uncomment for Regular Numpy
         return total_boxes, points
         """
+        
         # print([var.name for var in tape.watched_variables()])
         # print(tf_score)
         # print(tf_total_boxes[:,4], tf.math.reduce_max(tf_score))
@@ -1343,13 +1419,33 @@ class MTCNN(object):
         # print(indices, tf.gather(tf_score, indices))
 
         # print(a.shape, b.shape, type(a), type(b), a, b, a is b)      
-      gradient = tape.gradient(tf_outie, self.patch) # self.patch -> tf_img -> MANY tf_tmp -> tf_tempimg -> / DOESN'T KNOW HOW TO DO GRADIENT OF 'AREA' RESIZE / -> tf_tempimg2 -> tf_out
+      #print(total_boxes, tf_total_boxes)
+      #loss = tf.divide(tf.math.reduce_sum(tf.math.log(tf_outie)), tf_outie.shape[0])
+      
+        
+      if tf_loss:
+        gradient = tape.gradient(tf_loss, self.patch) # self.patch -> tf_img -> MANY tf_tmp -> tf_tempimg -> / DOESN'T KNOW HOW TO DO GRADIENT OF 'AREA' RESIZE / -> tf_tempimg2 -> tf_out
+        self.patch.assign(tf.clip_by_value(self.patch+gradient*10000000, clip_value_min = 0, clip_value_max = 255))
       #self.adv_img = tf.cast(tf_tempimg1[0,:,:,:], dtype=tf.float32).numpy()
       #print(type(self.adv_img), self.adv_img.shape)
       
+      
       #print(self.adv_img)
-      print(gradient)
-      print(gradient.shape, self.patch.shape)
+      #print(gradient)
+      """
+      if True:
+        print('wizard')
+        #self.patch.assign(tf.keras.preprocessing.image.img_to_array(tf.keras.utils.load_img("wizards.jpg", target_size = (128, 128))))
+      else:
+        print('lesser')
+      """
+      
+      
+      #storePatch = self.patch.numpy()
+      #cv2.imwrite('Face_Control/'+str(self.i)+'_patch_.jpg', storePatch*10000000) #[:, :, [2, 1, 0]])
+      #self.i += 1
+      
+      #print(gradient.shape, self.patch.shape)
       # gradient = tape.gradient(tf_total_boxes[:,4], tempimg2)
       # print(gradient.shape, tf_tempimg2.shape)
       # print(gradient)
