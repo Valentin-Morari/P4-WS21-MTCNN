@@ -7,7 +7,6 @@ import cv2
 import pkg_resources
 import matplotlib.patches as mpatches
 import os
-import math
 
 # keras_scratch_graph problem
 # gpu version
@@ -16,12 +15,12 @@ import math
 
 detector = mtcnn.MTCNN()
 
+
 def tf_scale_image(img, scale):
     height, width, _ = img.shape
     width_scaled = tf.math.ceil(width * scale)
     height_scaled = tf.math.ceil(height * scale)
-    scaleimage = tf.image.resize(
-        img, (width_scaled, height_scaled))
+    scaleimage = tf.image.resize(img, (width_scaled, height_scaled), method='lanczos5', antialias=True)
 
     '''MTCNN normalized the image's pixels here, but Attack doesn't. 
         They moved it to imageChangeToFitPnet() 
@@ -64,7 +63,7 @@ def generate_bounding_box(imap, reg, scale, t):
 
     return boundingboxtf, regtf
 
-
+'''Instead of our Non Maximum Suppression method I use the NMS method given by TensorFlow '''
 def nms(boxes, threshold, method):
     """
     Non Maximum Suppression.
@@ -168,10 +167,11 @@ def process_pnet_result(pnet_result):
     boxes, _ = generate_bounding_box(tf.identity(out1[0, :, :, 1]), tf.identity(out0[0, :, :, :]), scale_factor,
                                      steps_threshold[0])  # tf.identity should be the counterpart of numpy.copy
 
+    ''' #Ich verwende gerade die non max suppresion Methode, die von TensorFlow bereitgestellt wird
     pick = nms(tf.identity(boxes), 0.5, 'Union')  # tf.identity should be the counterpart of numpy.copy
 
     picktf = tf.cast(pick, dtype=tf.int32)  # I have to use the type tf.int32 and not tf.int16
-
+    '''
     tf_pick = tf.image.non_max_suppression(tf.identity(boxes[:, 0:4]), tf.identity(boxes[:, 4]), 100, iou_threshold=0.5)
 
     if tf.size(boxes) > 0 and tf.size(tf_pick) > 0:
@@ -181,9 +181,13 @@ def process_pnet_result(pnet_result):
     numboxes = total_boxes.shape[0]
 
     if numboxes > 0:
+        '''
         pick = nms(tf.identity(total_boxes), 0.7, 'Union')  # tf.identity should be the counterpart of numpy.copy
         picktf = tf.cast(pick, dtype=tf.int32)  # I have to use the type tf.int32 and not tf.int16
-        total_boxes = tf.gather(total_boxes, indices=picktf)
+        '''
+        tf_pick = tf.image.non_max_suppression(tf.identity(total_boxes[:, 0:4]), tf.identity(total_boxes[:, 4]), 100,
+                                               iou_threshold=0.7)
+        total_boxes = tf.gather(total_boxes, indices=tf_pick)
 
         regw = total_boxes[:, 2] - total_boxes[:, 0]
         regh = total_boxes[:, 3] - total_boxes[:, 1]
@@ -209,10 +213,11 @@ def process_pnet_result(pnet_result):
 
 def loss_object(label, predict_box):
     # MSE loss
-    #loss = tf.math.reduce_mean(tf.math.square(tf.subtract(label, predict_box)))
-    loss = tf.divide(tf.math.reduce_sum(tf.math.log(predict_box)), len(predict_box)) #THIS DOES ASCENT WITH TENSORFLOW DESCENT
-    #loss = tf.negative(tf.divide(tf.math.reduce_sum(tf.math.log(predict_box)), len(predict_box))) #THIS DOES DESCENT WITH TENSORFLOW DESCENT
-    #print(loss)
+    # loss = tf.math.reduce_mean(tf.math.square(tf.subtract(label, predict_box)))
+    loss = tf.divide(tf.math.reduce_sum(tf.math.log(predict_box)),
+                     len(predict_box))  # THIS DOES ASCENT WITH TENSORFLOW DESCENT
+    # loss = tf.negative(tf.divide(tf.math.reduce_sum(tf.math.log(predict_box)), len(predict_box)))  # THIS DOES DESCENT WITH TENSORFLOW DESCENT
+    # print(loss)
     return loss
 
 
@@ -229,12 +234,15 @@ pnet_attacked = createPnet()
 
 def imageChangeToFitPnet(image, scale):
     image = tf_scale_image(image, scale)
-    #image = tf.cast(image, dtype=tf.float32)
+    # image = tf.cast(image, dtype=tf.float32)
     # Normalize image
-    #image = (image - 127.5) * 0.0078125 # using it know before this function
+    # image = (image - 127.5) * 0.0078125 # using it know before this function
     image = image[tf.newaxis, ...]
     image = tf.transpose(image, (0, 2, 1, 3))
     return image
+
+
+'''Right now, Label is still in the Code but I am not using it, since I do not know if I will need it or not.'''
 
 
 def createLabel(image, scale):
@@ -246,9 +254,7 @@ def createLabel(image, scale):
 def create_adversarial_pattern(image, label, ground_truth_boxes, scale):
     with tf.GradientTape() as tape:
         tape.watch(var_patch)
-        '''
-        #print("IMAGE:")
-        #print(image)
+
         adv_image = tf_apply_patch(image, var_patch, ground_truth_boxes)
 
         adv_image = imageChangeToFitPnet(adv_image, scale)
@@ -257,15 +263,9 @@ def create_adversarial_pattern(image, label, ground_truth_boxes, scale):
 
         probe = process_pnet_result(pnet_probe)
 
-        print("PROBE:")
-        print(probe) #THERE CAN BE A NEGATIVE COORDINATE
+        confidence_scores = probe[:, 4]  # tf.convert_to_tensor(probe[:, 4], dtype=tf.float32)
+        loss = loss_object(label, confidence_scores)  # label will be needed for the IOU later
 
-        confidence_scores = probe[:, 4]#tf.convert_to_tensor(probe[:, 4], dtype=tf.float32)
-        loss = loss_object(label, confidence_scores) #label will be needed for the IOU later
-        '''
-        #TO_DO
-        loss = loss_object(label, process_pnet_result(pnet_attacked(imageChangeToFitPnet(
-            tf_apply_patch(image, var_patch, ground_truth_boxes), scale)))[:, 4])
         print("LOSS: ")
         print(loss)
     # Get the gradients of the loss to the input image
@@ -283,13 +283,9 @@ def create_adversarial_pattern(image, label, ground_truth_boxes, scale):
     # Normalization, all gradient divide the max gradient's absolute value
     #norm_gradient = tf.math.divide(gradient, tf.math.reduce_max(tf.math.abs(gradient)))
     """
-    #print(var_patch)
-    #TO_DO
-    gradient = tape.gradient(loss, var_patch) #HELLO MOTHERFUCKING NONE GRADIENT
-    #print(gradient)
-    #step_count = opt.minimize(loss, var_list=var_patch, grad_loss=gradient, tape=tape)
+    gradient = tape.gradient(loss, var_patch)  # HELLO MOTHERFUCKING NONE GRADIENT
 
-    return gradient, loss#norm_gradient, loss
+    return gradient, loss  # norm_gradient, loss
 
 
 def tf_apply_patch(img, patch, ground_truths_of_image):
@@ -301,30 +297,29 @@ def tf_apply_patch(img, patch, ground_truths_of_image):
     :param ground_truths_of_image: Ground truth bounding boxes of the image, i.e. the marked faces
     :return: The original image but with the patch placed, dependet on where the ground truths are given
     """
-    #adv_img = copy.deepcopy(img)
-    #tf_adv_img = tf.cast(img, dtype=tf.float32)
 
     alpha = 0.5
 
     # draw detected face + plaster patch over source
     for bounding_box in ground_truths_of_image:  # ground truth loop
 
-        resize_value = alpha * math.sqrt(bounding_box[2] * bounding_box[3]) #CHANGE! need to remove math
-        tf_resized_P = tf.image.resize(patch, (round(resize_value), round(resize_value)))
+        resize_value = alpha * tf.math.sqrt(bounding_box[2] * bounding_box[3])s
+        tf_resized_P = tf.image.resize(patch, (resize_value, resize_value))  # , method='lanczos5', antialias=True)
 
-        x_P = round(bounding_box[2] / 2)
-        y_P = round(resize_value / 2)
+        x_P = tf.math.round(bounding_box[2] / 2.0)
+        y_P = tf.math.round(resize_value / 2.0)
 
         adv_img_rows = img.shape[0]
         adv_img_cols = img.shape[1]
 
         # Finding the indices where to put the patch
-        y_start = y_P + bounding_box[1] - round(tf_resized_P.shape[1] / 2)  # bounding_box[0]
-        x_start = x_P + bounding_box[0] - round(tf_resized_P.shape[0] / 2)  # bounding_box[1]
-        y_end = y_P + bounding_box[1] - round(tf_resized_P.shape[1] / 2) + tf_resized_P.shape[
-            1]
-        x_end = x_P + bounding_box[0] - round(tf_resized_P.shape[0] / 2) + tf_resized_P.shape[
-            0]
+        y_start = tf.cast(y_P + bounding_box[1] - round(tf_resized_P.shape[1] / 2.0), dtype=tf.int32)  # bounding_box[0]
+        x_start = tf.cast(x_P + bounding_box[0] - round(tf_resized_P.shape[0] / 2.0), dtype=tf.int32)  # bounding_box[1]
+
+        y_end = tf.cast(y_P + bounding_box[1] - round(tf_resized_P.shape[1] / 2.0) + tf_resized_P.shape[
+            1], dtype=tf.int32)
+        x_end = tf.cast(x_P + bounding_box[0] - round(tf_resized_P.shape[0] / 2.0) + tf_resized_P.shape[
+            0], dtype=tf.int32)
 
         tf_overlay = tf_resized_P - img[y_start:y_end, x_start:x_end]
         tf_overlay_pad = tf.pad(tf_overlay, [[y_start, adv_img_rows - y_end], [x_start, adv_img_cols - x_end], [0, 0]])
@@ -332,14 +327,14 @@ def tf_apply_patch(img, patch, ground_truths_of_image):
 
     return tf_adv_img
 
-
+'''Instead of this method getRGB is used right now'''
 def getPerturbationRGB(image, imageWithPerturbations):
     temp = tf.squeeze(imageWithPerturbations)
     temp = temp / 0.0078125 + 127.5
     temp = tf.transpose(temp, (1, 0, 2))
     temp = cv2.resize(temp.numpy(), (image.shape[1], image.shape[0]))
 
-    return temp #* mask
+    return temp  # * mask
 
 
 def getRGB(image):
@@ -347,10 +342,11 @@ def getRGB(image):
     return temp
 
 
-def iterative_attack(adv_image, label, ground_truth_boxes, scale, learning_rate, scaleNum): #CHANGED: Removed GRAYSCALE
+def iterative_attack(adv_image, label, ground_truth_boxes, scale, learning_rate,
+                     scaleNum):  # CHANGED: Removed GRAYSCALE
 
-    upperBound = (255 - 127.5) * 0.0078125 # ~ +1
-    lowerBound = (0 - 127.5) * 0.0078125 # ~ -1
+    upperBound = (255 - 127.5) * 0.0078125  # ~ +1
+    lowerBound = (0 - 127.5) * 0.0078125  # ~ -1
 
     for epoch in range(50):
         print("_____")
@@ -362,14 +358,20 @@ def iterative_attack(adv_image, label, ground_truth_boxes, scale, learning_rate,
         tf.dtypes.cast(adv_image, tf.float32)
         '''
 
-        perturbations, loss = create_adversarial_pattern(adv_image, label, ground_truth_boxes, scale)
+        gradient, loss = create_adversarial_pattern(adv_image, label, ground_truth_boxes, scale)
 
-        modified_patch = var_patch + perturbations * 10000000
-        normalized_modified_patch = tf.where(modified_patch < lowerBound, lowerBound, modified_patch)  # everything smaller than -1 is cast to -1
-        normalized_modified_patch = tf.where(normalized_modified_patch > upperBound, upperBound, normalized_modified_patch)
-        var_patch.assign(normalized_modified_patch)
-        #print("VAR_PATCH")
-        #print(var_patch)
+        print("GRADIENT:")
+        print(gradient)
+        # opt.apply_gradients(zip(gradient, var_patch))
+        # ATTENTION
+        if perturbations == None:
+            perturbations = 0
+        modified_patch = var_patch + gradient * 1000  # pow(10, 23)
+        normalized_modified_patch = tf.where(modified_patch < lowerBound, lowerBound,
+                                             modified_patch)  # everything smaller than -1 is cast to -1
+        normalized_modified_patch = tf.where(normalized_modified_patch > upperBound, upperBound,
+                                             normalized_modified_patch)
+        var_patch.assign(normalized_modified_patch)  # (normalized_modified_patch)
 
         if epoch == 60:
             learning_rate = learning_rate * 0.1
@@ -388,7 +390,7 @@ for distance in range(1, 2):  # CHANGED
     pictureList = os.listdir('./picture/{}M/normal'.format(distance))
     true_box_info = np.load('./picture/{}M/normal/info_changed.npy'.format(distance), allow_pickle=True)
 
-    for file in allFileList: #ATTENTION THE PATCH IMAGES AREN'T USED RIGHT KNOW
+    for file in allFileList:  # ATTENTION THE PATCH IMAGES AREN'T USED RIGHT KNOW
         patch_name = file.split('.')[0]
 
         for pic in pictureList:
@@ -399,20 +401,21 @@ for distance in range(1, 2):  # CHANGED
             which_pic = int(pic_name[0]) - 1
 
             image = tf.keras.preprocessing.image.load_img('./picture/{}M/normal/'.format(distance) + pic)
-            #patch = tf.keras.preprocessing.image.load_img('patch_img/' + file)
+            # patch = tf.keras.preprocessing.image.load_img('patch_img/' + file)
             image = tf.keras.preprocessing.image.img_to_array(image)
-            #patch = tf.keras.preprocessing.image.img_to_array(patch)
+            # patch = tf.keras.preprocessing.image.img_to_array(patch)
             '''
             Random patch is used right know
 
             Right now, I'm trying to normalize our RGB patch to their relative numbers between
             -1 and 1, so I could use the float type without loosing information.
             '''
-            patch = np.random.randint(255, size=(128, 128, 3)) # RANDOM PATCH
-            patch = (patch - 127.5) * 0.0078125 # NORMALIZING of the patch
+            patch = np.random.randint(255, size=(128, 128, 3))  # RANDOM PATCH
+            patch = (patch - 127.5) * 0.0078125  # NORMALIZING of the patch
             var_patch = tf.Variable(patch, dtype=tf.float32)  # RANDOM PATCH to TF VARIABLE
 
             result = detector.detect_faces(image)
+            image = tf.cast(image, dtype=tf.float32)
 
             if len(result) == 1:  # With this bounding_boxes is always 2 dimensional
                 bounding_boxes = np.array([result[0]['box']])
@@ -421,6 +424,8 @@ for distance in range(1, 2):  # CHANGED
 
                 for i in range(len(result)):
                     bounding_boxes = np.append(bounding_boxes, np.array([result[i]['box']]), axis=0)
+
+            bounding_boxes = tf.cast(bounding_boxes, dtype=tf.float32)
 
             # Old Patch method
             """
@@ -439,8 +444,7 @@ for distance in range(1, 2):  # CHANGED
                         storePatch[:, :, [2, 1, 0]])
 
             image2[mask_y1:mask_y2, mask_x1:mask_x2] = patch
-            
-            
+
             # frame_patch
             '''x1, y1, width, height = result[0]['box']
             x1, y1 = abs(x1), abs(y1)
@@ -478,12 +482,10 @@ for distance in range(1, 2):  # CHANGED
                     '''
                     Preparing the image before the tape.
                     '''
-                    normalized_image = (image - 127.5) * 0.0078125 # NORMALIZING the image used
-                    print(("NORMALIZED IMAGE:"))
-                    print(normalized_image)
+                    normalized_image = (image - 127.5) * 0.0078125  # NORMALIZING the image used
 
-                    attacked_image = iterative_attack(normalized_image, label, bounding_boxes, scale, learning_rate, scaleNum)
-
+                    attacked_image = iterative_attack(normalized_image, label, bounding_boxes, scale, learning_rate,
+                                                      scaleNum)
 
             image3 = attacked_image
             image3 = getRGB(image3).numpy()
