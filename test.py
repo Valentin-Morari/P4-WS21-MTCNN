@@ -91,7 +91,7 @@ def IoU(boxA,
     return iou
 
 
-def output_images(ASes_output, originals, prefix = ""):
+def output_images(ASes_output, originals, patch_output, prefix = ""):
     working_images = copy.deepcopy(originals)  # don't modify the original pictures
 
     for image_nr in range(len(working_images)):  # loop through all
@@ -120,6 +120,11 @@ def output_images(ASes_output, originals, prefix = ""):
         # Creates working_images in which the faces are marked through their bounding boxes
         cv2.imwrite(img_folder + "/" + "_out_" + prefix + image_names[image_nr],
                     cv2.cvtColor(working_images[image_nr], cv2.COLOR_RGB2BGR))
+
+        np_patch_out = patch_output.numpy()
+        np_patch_out = np.fix(np_patch_out)
+        cv2.imwrite(img_folder + "/" + "_out_" + prefix + "Adversial_Patch.jpg",
+                    cv2.cvtColor(np_patch_out, cv2.COLOR_RGB2BGR))
 
 
 def apply_patch(originals, patch):
@@ -198,6 +203,7 @@ def run(patch_used, edited_images):
     # AS = [ASi for ASi in AS if IoU(ASi[0], ASi[1]) > lambda_IoU]
     return ASes
 
+
 def new_run(patch_used, original_images):
     # global AS  # AS is broken
     # select for AS based on IoU > 0.6
@@ -270,25 +276,30 @@ init_patch = np.random.randint(255, size=(128, 128, 3),
 
 old_patch = tf.cast(init_patch, dtype=tf.float32)
 
-for i in range(100):
-  bbox, adv_img, new_patch = new_run(old_patch, images)
-  #print(tf.cast(new_patch, dtype=tf.float32)-old_patch)
-  """
-  if i ==0:
-    output_images(bbox, adv_img, "first")
-  elif i == 49:
-    output_images(bbox, adv_img, "last")
-  else:
-    output_images(bbox, adv_img)
-  """  
-  output_images(bbox, adv_img, str(i)+"_")
-  old_patch = tf.cast(new_patch, dtype=tf.float32)
-  print("Epoch", i)
-  
-  """
-  if i == 1:
-    patch = cv2.cvtColor(cv2.imread(('wizards.jpg')), cv2.COLOR_BGR2RGB)
-  """
+for i in range(101):
+
+    detector = MTCNN()
+    bbox, adv_img, new_patch = new_run(old_patch, images)
+    #print(tf.cast(new_patch, dtype=tf.float32)-old_patch)
+    """
+    if i ==0:
+      output_images(bbox, adv_img, "first")
+    elif i == 49:
+      output_images(bbox, adv_img, "last")
+    else:
+      output_images(bbox, adv_img)
+    """
+    if(i % 20 == 0):
+      output_images(bbox, adv_img, new_patch, str(i)+"_")
+
+    old_patch = tf.cast(new_patch, dtype=tf.float32)
+
+    print("Epoch", i)
+
+    """
+      if i == 1:
+        patch = cv2.cvtColor(cv2.imread(('wizards.jpg')), cv2.COLOR_BGR2RGB)
+    """
   
 def loss_object():
     #print(patch)
