@@ -72,6 +72,11 @@ def IoU(boxA,
     # return the intersection over union value
     return iou > lambda_IoU
 
+def not_negative(x):
+  if x<0:
+    return 0
+  else:
+    return x
 
 class StageStatus(object):
     """
@@ -521,7 +526,6 @@ class MTCNN(object):
         :param ground_truths_of_image: Ground truth bounding boxes of the image
         :return: The original image but with the patch placed, dependet on where the ground truths are given
         """
-        
         alpha = 0.5
         #i = 0  # used for pairing items in AS
 
@@ -567,6 +571,8 @@ class MTCNN(object):
             adv_img_cols = img.shape[1]
 
             y_start = y_P + bounding_box[1] - round(tf_resized_P.shape[1] / 2) #bounding_box[0]
+            
+            
             x_start = x_P + bounding_box[0] - round(tf_resized_P.shape[0] / 2) #bounding_box[1]
             y_end = y_P + bounding_box[1] - round(tf_resized_P.shape[1] / 2) + tf_resized_P.shape[1]# x_start + tf_resized_p.shape[0]
             x_end = x_P + bounding_box[0] - round(tf_resized_P.shape[0] / 2) + tf_resized_P.shape[0] # y_start + tf_resized_p.shape[1]
@@ -576,7 +582,28 @@ class MTCNN(object):
             #print("PSHAPE: ", p_shape)
             #print("BBX: ", x_start, " + PX: ", tf_resized_P.shape[0] , " = ", x_end)
             #print("BBY: ", y_start, " + PY: ", tf_resized_P.shape[1], " = ", y_end)
-
+            
+            true_y_start = y_start
+            y_start = not_negative(y_start)
+            true_x_start = x_start
+            x_start = not_negative(x_start)
+            true_y_end = y_end
+            y_end = not_negative(y_end)
+            true_x_end = x_end
+            x_end = not_negative(x_end)
+            
+            if y_start != true_y_start:
+              y_end += y_start - true_y_start
+            elif y_end != true_y_end:
+              y_start -= y_end - true_y_end 
+            elif x_start != true_x_start:
+              x_end += x_start - true_x_start
+            elif x_end != true_x_end:
+              x_start -= x_end - true_x_end
+              
+            #print(y_start,y_end,x_start,x_end,true_y_start, true_y_end, true_x_start, true_x_end)
+            #print(tf_resized_P.shape, img[true_y_start:y_end, x_start:x_end].shape)
+            
             overlay = tf_resized_P - img[y_start:y_end, x_start:x_end]
             overlay_pad = tf.pad(overlay, [[y_start, adv_img_rows - y_end], [x_start, adv_img_cols - x_end], [0, 0]])
             #print(overlay_pad)
@@ -1224,12 +1251,13 @@ class MTCNN(object):
         #print(total_boxes, new_total_boxes)
         total_boxes = new_total_boxes
         """
+        
         num_boxes = len(total_boxes)
         tf_total_boxes = tf.cast(total_boxes, dtype=tf.float32) #maybe requires pre-setting
 
         if num_boxes == 0:
             print('no faces detected')
-            return total_boxes, np.empty(shape=(0,))  # it's just face points - can be left on np
+            return tf_total_boxes, np.empty(shape=(0,))  # it's just face points - can be left on np
 
         total_boxes = np.fix(total_boxes).astype(np.int32)
         #print(total_boxes)
@@ -1326,6 +1354,9 @@ class MTCNN(object):
         except:
           print('no confidence!')
           tf_total_boxes = tf.experimental.numpy.empty(0)
+          return [], out1
+          
+          #check this out
           #print(tf_total_boxes)
           #return [], out1 #avoids ConcatOp : Expected concatenating dimensions in the range [-1, 1), but got 1 [Op:ConcatV2] - error, when axis = 1
 
@@ -1383,8 +1414,10 @@ class MTCNN(object):
         if tf_total_boxes.shape[0] > 0:
             tf_total_boxes = self.__tf_bbreg(tf_total_boxes, tf.transpose(
                 tf_mv))  # didn't copy tf_total_boxes, let's see how it goes
-            tf_pick = self.__tf_nms(tf_total_boxes, 0.7, 'Min')  # also didn't copy
-            tf_pick = tf_pick.astype('int32')  # initially is type int16 which tensorflow doesn't support ... for some reason
+            #tf_pick = self.__tf_nms(tf_total_boxes, 0.7, 'Min')  # also didn't copy
+            tf_pick = tf.image.non_max_suppression(tf_total_boxes[:, 0:4], tf_total_boxes[:, 4], max_output_size = 100, iou_threshold = 0.7)  # also didn't copy
+            tf_pick = tf.cast(tf_pick, dtype=tf.int32)  # initially is type int16 which tensorflow doesn't support ... for some reason
+            #tf_pick = tf_pick.astype('int32')  # initially is type int16 which tensorflow doesn't support ... for some reason
             tf_total_boxes = tf.gather(tf_total_boxes, tf_pick)
             #tf_points = tf_points[:, tf_pick]  # have to comment out because during comparison to above it breaks stuff  ----- SOMETIMES throws errors: IndexError: index 3 is out of bounds for axis 1 with size 3
 
@@ -1425,7 +1458,7 @@ class MTCNN(object):
         
       if tf_loss:
         gradient = tape.gradient(tf_loss, self.patch) # self.patch -> tf_img -> MANY tf_tmp -> tf_tempimg -> / DOESN'T KNOW HOW TO DO GRADIENT OF 'AREA' RESIZE / -> tf_tempimg2 -> tf_out
-        self.patch.assign(tf.clip_by_value(self.patch+gradient*10000000, clip_value_min = 0, clip_value_max = 255))
+        self.patch.assign(tf.clip_by_value(self.patch+gradient*1000000, clip_value_min = 0, clip_value_max = 255))
       #self.adv_img = tf.cast(tf_tempimg1[0,:,:,:], dtype=tf.float32).numpy()
       #print(type(self.adv_img), self.adv_img.shape)
       
