@@ -4,6 +4,7 @@ from mtcnn import MTCNN
 import numpy as np
 import math
 import copy
+import os
 
 detector = MTCNN()
 
@@ -36,8 +37,8 @@ ASes = [ # list of images with their ASes
 
 #ASes = []
 
-labels = open(img_folder + "/" + "labels.txt", "r")
-
+#labels = open(img_folder + "/" + "labels.txt", "r")
+"""
 while labels:
     img_name = labels.readline().rstrip("\n")
     if img_name == "":
@@ -53,7 +54,34 @@ while labels:
 
     for i in range(ground_truth_count):
         ground_truths[img_name].append([int(value) for value in labels.readline().rstrip("\n").split()])
+"""
 
+  
+labels = open(img_folder + "/" + "wider_face_train_bbx_gt.txt", "r")
+n = 0
+while labels:
+    if n == 25: #number of photos processed
+      break
+      
+    n+=1 
+    img_name = labels.readline().rstrip("\n")
+    if img_name == "":
+        labels.close()
+        break
+
+    image_names.append(img_name)
+    
+
+    images.append(cv2.cvtColor(cv2.imread((img_folder + "/" + img_name)), cv2.COLOR_BGR2RGB))
+    ground_truth_count = int(labels.readline().rstrip("\n"))
+
+    ground_truths[img_name] = []
+
+    for i in range(ground_truth_count):
+        ground_truths[img_name].append([int(value) for value in labels.readline().rstrip("\n").split()][0:4]) # take only first 4 values for box size
+
+
+  
 # alpha = 0.28 # - To match paper's examples
 alpha = 0.5  # - To match paper's concrete parameters
 lambda_IoU = 0.6  # To match paper's concrete parameters
@@ -117,15 +145,16 @@ def output_images(ASes_output, originals, patch_output, prefix = ""):
                           (bounding_box[0] + bounding_box[2], bounding_box[1] + bounding_box[3]),
                           (0, 155, 255),
                           2)
+        #print(working_images[image_nr])
         # Creates working_images in which the faces are marked through their bounding boxes
-        cv2.imwrite(img_folder + "/" + "_out_" + prefix + image_names[image_nr],
+        cv2.imwrite(img_folder + "/" + "_out_" + prefix + image_names[image_nr].split("/")[1],
                     cv2.cvtColor(working_images[image_nr], cv2.COLOR_RGB2BGR))
 
         np_patch_out = patch_output.numpy()
         np_patch_out = np.fix(np_patch_out)
-        cv2.imwrite(img_folder + "/" + "_out_" + prefix + "Adversial_Patch.jpg",
+        cv2.imwrite(img_folder + "/" + "_out_" + prefix + "Adversarial_Patch.jpg",
                     cv2.cvtColor(np_patch_out, cv2.COLOR_RGB2BGR))
-
+        
 
 def apply_patch(originals, patch):
     working_images = copy.deepcopy(originals)  # don't modify the original pictures
@@ -203,7 +232,6 @@ def run(patch_used, edited_images):
     # AS = [ASi for ASi in AS if IoU(ASi[0], ASi[1]) > lambda_IoU]
     return ASes
 
-
 def new_run(patch_used, original_images):
     # global AS  # AS is broken
     # select for AS based on IoU > 0.6
@@ -216,6 +244,7 @@ def new_run(patch_used, original_images):
     for i in range(len(original_images)):
         
         #print(tmp_patch,tf.math.scalar_mul(0.5, tmp_patch))
+
         tmp_result, tmp_adv_img, new_patch = detector.new_detect_faces(original_images[i], tmp_patch, ground_truths[image_names[i]])
         #print(orig-patch_used)
         tmp_patch = new_patch
@@ -276,8 +305,14 @@ init_patch = np.random.randint(255, size=(128, 128, 3),
 
 old_patch = tf.cast(init_patch, dtype=tf.float32)
 
-for i in range(101):
-
+for i in range(501):
+    '''
+    mu = 0
+    for name in list(vars()):
+        print(name, " ### ", sys.getsizeof(name))
+        mu = mu + sys.getsizeof(name)
+    print(mu)
+    '''
     detector = MTCNN()
     bbox, adv_img, new_patch = new_run(old_patch, images)
     #print(tf.cast(new_patch, dtype=tf.float32)-old_patch)
@@ -296,6 +331,13 @@ for i in range(101):
 
     print("Epoch", i)
 
+    mu = 0
+    '''
+    for name in list(vars()):
+        print(name, " ### ", sys.getsizeof(name))
+        mu = mu + sys.getsizeof(name)
+    print(mu)
+    '''
     """
       if i == 1:
         patch = cv2.cvtColor(cv2.imread(('wizards.jpg')), cv2.COLOR_BGR2RGB)
