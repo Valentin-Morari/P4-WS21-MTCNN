@@ -1,3 +1,5 @@
+import gc
+
 import tensorflow as tf
 import cv2
 from mtcnn import MTCNN
@@ -5,8 +7,12 @@ import numpy as np
 import math
 import copy
 import os
+import psutil
 
-detector = MTCNN()
+import memory_profiler
+from memory_profiler import profile
+
+#detector = MTCNN()
 
 # Loads the images into an array
 img_folder = "Face_Control"
@@ -58,24 +64,30 @@ while labels:
 
   
 labels = open(img_folder + "/" + "wider_face_train_bbx_gt.txt", "r")
-n = 0
+img_count = 0
 while labels:
-    if n == 25: #number of photos processed
+    if img_count == 460: #number of photos processed
       break
-      
-    n+=1 
+
+    img_count += 1
     img_name = labels.readline().rstrip("\n")
+    print(img_name)
     if img_name == "":
         labels.close()
         break
 
     image_names.append(img_name)
-    
+
 
     images.append(cv2.cvtColor(cv2.imread((img_folder + "/" + img_name)), cv2.COLOR_BGR2RGB))
     ground_truth_count = int(labels.readline().rstrip("\n"))
+    print("HAS", ground_truth_count, "FACES")
 
     ground_truths[img_name] = []
+
+    if ground_truth_count == 0:
+        ground_truths[img_name].append([int(value) for value in labels.readline().rstrip("\n").split()][0:4]) # There are no faces, so the ground_truth is all 0 [so the code can run]
+        print(ground_truths[img_name])
 
     for i in range(ground_truth_count):
         ground_truths[img_name].append([int(value) for value in labels.readline().rstrip("\n").split()][0:4]) # take only first 4 values for box size
@@ -88,7 +100,6 @@ lambda_IoU = 0.6  # To match paper's concrete parameters
 
 patch = tf.Variable(np.random.randint(255, size=(128, 128, 3),
                                       dtype=np.uint8))  # Patch Initialization - Set w^P and h^P = 128 to match the paper
-
 
 def IoU(boxA,
         boxB):  # Code taken directly from https://www.pyimagesearch.com/2016/11/07/intersection-over-union-iou-for-object-detection/
@@ -187,7 +198,7 @@ def apply_patch(originals, patch):
 
     return working_images
 
-
+'''
 def run(patch_used, edited_images):
     # global AS  # AS is broken
     # select for AS based on IoU > 0.6
@@ -231,8 +242,9 @@ def run(patch_used, edited_images):
 
     # AS = [ASi for ASi in AS if IoU(ASi[0], ASi[1]) > lambda_IoU]
     return ASes
+'''
 
-def new_run(patch_used, original_images):
+def new_run(patch_used, original_images, amplification_factor:int):
     # global AS  # AS is broken
     # select for AS based on IoU > 0.6
     # AS = []
@@ -241,15 +253,34 @@ def new_run(patch_used, original_images):
     result = []
     adv_img = []
     tmp_patch = patch_used
+    image_count = 0
+    detector = MTCNN()
     for i in range(len(original_images)):
+        process = psutil.Process(os.getpid())
+        print("IN TOTAL", process.memory_info().rss / 1000000, "MB")
         
         #print(tmp_patch,tf.math.scalar_mul(0.5, tmp_patch))
 
-        tmp_result, tmp_adv_img, new_patch = detector.new_detect_faces(original_images[i], tmp_patch, ground_truths[image_names[i]])
+        print(image_count, "_", image_names[i])
+
+        #Restarting MTCNN every 9 images, to save memory. 10 already rises up to 8GB sometimes.
+        '''
+        detector = MTCNN()
+        gc.collect()
+        '''
+
+        tmp_result, tmp_adv_img, new_patch = detector.new_detect_faces(original_images[i], tmp_patch
+                                                                       , ground_truths[image_names[i]], amplification_factor)
         #print(orig-patch_used)
         tmp_patch = new_patch
         result.append(tmp_result)
         adv_img.append(tmp_adv_img)
+
+        image_count += 1
+
+        if image_count % 9 == 0:
+            detector = MTCNN()
+            gc.collect()
     
     #print("RESULT:")
     #print(result)
@@ -305,7 +336,12 @@ init_patch = np.random.randint(255, size=(128, 128, 3),
 
 old_patch = tf.cast(init_patch, dtype=tf.float32)
 
-for i in range(501):
+amplification_factor = 10000000
+
+cv2.imwrite(img_folder + "/" + "_out_" + "INIT_" + "AmpF=" + str(amplification_factor) + "_IMG_COUNT=" + str(img_count)
+            +"_Adversarial_Patch.jpg", cv2.cvtColor(init_patch, cv2.COLOR_RGB2BGR))
+
+for epoch in range(121):
     '''
     mu = 0
     for name in list(vars()):
@@ -313,8 +349,7 @@ for i in range(501):
         mu = mu + sys.getsizeof(name)
     print(mu)
     '''
-    detector = MTCNN()
-    bbox, adv_img, new_patch = new_run(old_patch, images)
+    bbox, adv_img, new_patch = new_run(old_patch, images, amplification_factor)
     #print(tf.cast(new_patch, dtype=tf.float32)-old_patch)
     """
     if i ==0:
@@ -324,12 +359,22 @@ for i in range(501):
     else:
       output_images(bbox, adv_img)
     """
-    if(i % 20 == 0):
-      output_images(bbox, adv_img, new_patch, str(i)+"_")
+    if epoch % 10 == 0:
+      # output_images(bbox, adv_img, new_patch, str(epoch)+"_")
+
+      np_patch_out = new_patch.numpy()
+      np_patch_out = np.fix(np_patch_out)
+      cv2.imwrite(img_folder + "/" + "_out_" + str(epoch) + "_AmpF=" + str(amplification_factor) + "_IMG_COUNT="
+                  + str(img_count) + "_Adversarial_Patch.jpg", cv2.cvtColor(np_patch_out, cv2.COLOR_RGB2BGR))
+
+    if epoch == 60:
+        amplification_factor *= 0.1
+    if epoch == 80:
+        amplification_factor *= 0.1
 
     old_patch = tf.cast(new_patch, dtype=tf.float32)
 
-    print("Epoch", i)
+    print("Epoch", epoch)
 
     mu = 0
     '''
@@ -342,7 +387,7 @@ for i in range(501):
       if i == 1:
         patch = cv2.cvtColor(cv2.imread(('wizards.jpg')), cv2.COLOR_BGR2RGB)
     """
-  
+'''
 def loss_object():
     #print(patch)
     p = patch.numpy()
@@ -361,6 +406,7 @@ def loss_object():
     loss = tf.divide(tf.math.reduce_sum(tf.math.log(confidence_list)), len(confidence_list))
 
     return loss
+'''
 
 '''
 opt = tf.keras.optimizers.SGD(learning_rate=0.01) #learning rate laut dem paper
