@@ -13,6 +13,17 @@ import os
 #from memory_profiler import profile
 
 #detector = MTCNN()
+#GPU parameters
+
+physical_devices = tf.config.list_physical_devices('GPU')
+
+print(physical_devices)
+visible_devices = physical_devices[0]
+
+tf.config.experimental.set_visible_devices(visible_devices, 'GPU')
+
+#os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"
+#os.environ["CUDA_VISIBLE_DEVICES"]=1
 
 # Loads the images into an array
 img_folder = "Face_Control"
@@ -66,7 +77,7 @@ while labels:
 labels = open(img_folder + "/" + "wider_face_train_bbx_gt.txt", "r")
 n = 0
 while labels:
-    if n == 460: #number of photos processed
+    if n == 400: #number of photos processed
       break
 
     n += 1
