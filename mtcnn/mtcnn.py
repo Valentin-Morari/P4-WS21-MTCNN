@@ -629,7 +629,10 @@ class MTCNN(object):
         tf_adv_img = None
 
         # draw detected face + plaster patch over source
+
         for bounding_box in ground_truths_of_image:  # ground truth loop
+            if tf_adv_img is None:
+                tf_adv_img = img
 
             # TODO
             resize_value = round(alpha * math.sqrt(bounding_box[2] * bounding_box[3]))
@@ -671,7 +674,9 @@ class MTCNN(object):
             tf_overlay = tf_resized_P - img[y_start:y_end, x_start:x_end]
             tf_overlay_pad = tf.pad(tf_overlay,
                                     [[y_start, adv_img_rows - y_end], [x_start, adv_img_cols - x_end], [0, 0]])
-            tf_adv_img = img + tf_overlay_pad
+
+            tf_adv_img = tf_adv_img + tf_overlay_pad
+
         if tf_adv_img == None:
             print("ATTENTION no GroundTruth *************************************************")
             print(ground_truths_of_image)
@@ -796,7 +801,7 @@ class MTCNN(object):
                 }
             })
         # newie = tf.Variable(self.patch)
-        # self.adv_img = self.__tf_apply_patch(img, self.patch, ground_truths_of_image).numpy()
+        # self.adv_img = self.__my_tf_apply_patch(img, self.patch, ground_truths_of_image).numpy()
         # print(oldie - newie)
         # print(self.patch.dtype)
         return (bounding_boxes, self.adv_img, self.patch)
@@ -907,11 +912,12 @@ class MTCNN(object):
 
         return total_boxes, stage_status
 
+
     def __stage3(self, img, total_boxes, stage_status: StageStatus):
 
         with self.tape as tape:
 
-            img = self.__tf_apply_patch(img, self.patch, self.ground_truths_of_image)
+            img = self.__my_tf_apply_patch(img, self.patch, self.ground_truths_of_image)
             """
             Third stage of the MTCNN.
   
@@ -1259,7 +1265,6 @@ class MTCNN(object):
         return total_boxes, stage_status
 
     def __new_stage3(self, img, total_boxes, stage_status: StageStatus, amplification_factor: int):
-
         # tf_img = tf.cast(img, dtype=tf.float32)
         # self.patch = tf.Variable(self.patch, dtype=tf.float32)
 
@@ -1543,6 +1548,7 @@ class MTCNN(object):
             if gradient is not None:
                 self.patch.assign(tf.clip_by_value((self.patch + gradient * amplification_factor), clip_value_min=0,
                                                    clip_value_max=255))
+
         # self.adv_img = tf.cast(tf_tempimg1[0,:,:,:], dtype=tf.float32).numpy()
         # print(type(self.adv_img), self.adv_img.shape)
 
