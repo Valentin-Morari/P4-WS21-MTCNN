@@ -7,12 +7,20 @@ import numpy as np
 import math
 import copy
 import os
-import psutil
+#import psutil
 
 
 # detector = MTCNN()
 
 # Loads the images into an array
+
+os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"
+os.environ["CUDA_VISIBLE_DEVICES"]="2"
+
+config = tf.compat.v1.ConfigProto()
+config.gpu_options.allow_growth = True
+session = tf.compat.v1.Session(config=config)
+
 img_folder = "Face_Control"
 
 # global AS
@@ -42,7 +50,7 @@ ASes = [ # list of images with their ASes
 labels = open(img_folder + "/" + "wider_face_train_bbx_gt.txt", "r")
 img_count = 0
 while labels:
-    if img_count == 10:  # number of photos processed
+    if img_count == 300:  # number of photos processed
         break
 
     img_count += 1
@@ -120,8 +128,8 @@ def new_run(patch_used, original_images, amplification_factor: int):
     image_count = 0
     detector = MTCNN()
     for i in range(len(original_images)):
-        process = psutil.Process(os.getpid())
-        print("IN TOTAL", process.memory_info().rss / 1000000, "MB")
+        #process = psutil.Process(os.getpid())
+        #print("IN TOTAL", process.memory_info().rss / 1000000, "MB")
 
         # print(tmp_patch,tf.math.scalar_mul(0.5, tmp_patch))
 
@@ -149,9 +157,9 @@ init_patch = np.random.randint(255, size=(128, 128, 3),
 
 old_patch = tf.cast(init_patch, dtype=tf.float32)
 
-amplification_factor = 10000000
+amplification_factor = 1000
 
-cv2.imwrite(img_folder + "/" + "_out_" + "INIT_" + "AmpF=" + str(amplification_factor) + "_IMG_COUNT=" + str(img_count)
+cv2.imwrite(img_folder + "/Test_Kong" + "/" + "_out_" + "INIT_" + "AmpF=" + str(amplification_factor) + "_IMG_COUNT=" + str(img_count)
             + "_Adversarial_Patch.jpg", cv2.cvtColor(init_patch, cv2.COLOR_RGB2BGR))
 
 for epoch in range(121):
@@ -163,7 +171,7 @@ for epoch in range(121):
 
         np_patch_out = new_patch.numpy()
         np_patch_out = np.fix(np_patch_out)
-        cv2.imwrite(img_folder + "/" + "_out_" + str(epoch) + "_AmpF=" + str(amplification_factor) + "_IMG_COUNT="
+        cv2.imwrite(img_folder + "/Test_Kong" + "/" + "_out_" + str(epoch) + "_AmpF=" + str(amplification_factor) + "_IMG_COUNT="
                     + str(img_count) + "_Adversarial_Patch.jpg", cv2.cvtColor(np_patch_out, cv2.COLOR_RGB2BGR))
 
     if epoch == 60:
