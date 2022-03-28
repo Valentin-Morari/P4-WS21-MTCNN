@@ -1,4 +1,3 @@
-
 import gc
 
 import tensorflow as tf
@@ -8,36 +7,12 @@ import numpy as np
 import math
 import copy
 import os
-
 #import psutil
+
 #import memory_profiler
 #from memory_profiler import profile
 
 #detector = MTCNN()
-#GPU parameters
-"""
-TF_CPP_VMODULE=segment=2
-convert_graph=2
-convert_nodes=2
-trt_engine_op=2
-
-
-physical_devices = tf.config.list_physical_devices('GPU')
-
-for gpu in physical_devices:
-    tf.config.experimental.set_memory_growth(gpu, True)
-
-visible_devices = physical_devices[0]
-
-tf.config.experimental.set_visible_devices(visible_devices, 'GPU')
-"""
-
-os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"
-os.environ["CUDA_VISIBLE_DEVICES"]="0"
-
-config = tf.compat.v1.ConfigProto()
-config.gpu_options.allow_growth = True
-session = tf.compat.v1.Session(config=config)
 
 # Loads the images into an array
 img_folder = "Face_Control"
@@ -87,24 +62,26 @@ while labels:
         ground_truths[img_name].append([int(value) for value in labels.readline().rstrip("\n").split()])
 """
 
+  
 labels = open(img_folder + "/" + "wider_face_train_bbx_gt.txt", "r")
-
-n = 0
+img_count = 0
 while labels:
-    if n == 2: #number of photos processed
+    if img_count == 400: #number of photos processed
       break
 
-    n += 1
+    img_count += 1
     img_name = labels.readline().rstrip("\n")
+    #print(img_name)
     if img_name == "":
         labels.close()
         break
 
     image_names.append(img_name)
-    
+
 
     images.append(cv2.cvtColor(cv2.imread((img_folder + "/" + img_name)), cv2.COLOR_BGR2RGB))
     ground_truth_count = int(labels.readline().rstrip("\n"))
+    #print("HAS", ground_truth_count, "FACES")
 
     ground_truths[img_name] = []
 
@@ -114,6 +91,7 @@ while labels:
 
     for i in range(ground_truth_count):
         ground_truths[img_name].append([int(value) for value in labels.readline().rstrip("\n").split()][0:4]) # take only first 4 values for box size
+
 
   
 # alpha = 0.28 # - To match paper's examples
@@ -299,12 +277,11 @@ def new_run(patch_used, original_images, amplification_factor:int):
         adv_img.append(tmp_adv_img)
 
         image_count += 1
-        #print("HELLO:",tf.get_logger())
 
-        if image_count % 9 == 0:
-            detector = MTCNN()
-            gc.collect()
+        
+            
     
+
     #print("RESULT:")
     #print(result)
     ASes = []  # Reset Adversarial Samples when re-running the algorithm
@@ -344,6 +321,20 @@ def new_run(patch_used, original_images, amplification_factor:int):
         # print(ASes)
 
     # AS = [ASi for ASi in AS if IoU(ASi[0], ASi[1]) > lambda_IoU]
+    if image_count % 9 == 0:
+            del detector
+            del ASes
+            del AS
+            del i
+            del result
+            del faces
+            del tmp_result
+            del tmp_adv_img 
+            del new_patch
+            
+            gc.collect()
+            detector = MTCNN()
+            
     return ASes, adv_img, tmp_patch
 
 init_patch = np.random.randint(255, size=(128, 128, 3),
@@ -359,12 +350,12 @@ init_patch = np.random.randint(255, size=(128, 128, 3),
 
 old_patch = tf.cast(init_patch, dtype=tf.float32)
 
-amplification_factor = 10000000
+amplification_factor = 1000000
 
-cv2.imwrite(img_folder + "/" + "_out_" + "INIT_"+ "AmpF=" + str(amplification_factor) +"_Adversarial_Patch.jpg",
-            cv2.cvtColor(init_patch, cv2.COLOR_RGB2BGR))
+cv2.imwrite(img_folder + "/" + "_out_" + "INIT_" + "AmpF=" + str(amplification_factor) + "_IMG_COUNT=" + str(img_count)
+            +"_Adversarial_Patch.jpg", cv2.cvtColor(init_patch, cv2.COLOR_RGB2BGR))
 
-for epoch in range(101):
+for epoch in range(121):
     '''
     mu = 0
     for name in list(vars()):
@@ -382,13 +373,13 @@ for epoch in range(101):
     else:
       output_images(bbox, adv_img)
     """
-    if epoch % 10 == 0:
+    #if epoch % 10 == 0:
       # output_images(bbox, adv_img, new_patch, str(epoch)+"_")
 
-      np_patch_out = new_patch.numpy()
-      np_patch_out = np.fix(np_patch_out)
-      cv2.imwrite(img_folder + "/" + "_out_" + str(epoch) + "_AmpF=" + str(amplification_factor) + "_Adversarial_Patch.jpg",
-                  cv2.cvtColor(np_patch_out, cv2.COLOR_RGB2BGR))
+    np_patch_out = new_patch.numpy()
+    np_patch_out = np.fix(np_patch_out)
+    cv2.imwrite(img_folder + "/" + "_out_" + str(epoch) + "_AmpF=" + str(amplification_factor) + "_IMG_COUNT="
+                + str(img_count) + "_Adversarial_Patch.jpg", cv2.cvtColor(np_patch_out, cv2.COLOR_RGB2BGR))
 
     if epoch == 60:
         amplification_factor *= 0.1
