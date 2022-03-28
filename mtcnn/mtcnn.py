@@ -40,8 +40,8 @@ import math
 from mtcnn.exceptions import InvalidImage
 from mtcnn.network.factory import NetworkFactory
 
-import memory_profiler
-from memory_profiler import profile
+#import memory_profiler
+#from memory_profiler import profile
 
 __author__ = "Iván de Paz Centeno"
 
