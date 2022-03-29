@@ -33,12 +33,15 @@ ASes = [ # list of images with their ASes
 """
   
 labels = open(img_folder + "/" + "wider_face_train_bbx_gt.txt", "r") #read WIDERFACE ground truth labels (taken from the training set)
+for _ in range(40077): #skip to the dataset relevant to us
+      next(labels)
+    
 n = 0 #number of photos processed
 
 while labels:
-    if n == 460: #stop when number of photos processed reaches desired value
+    if n == 550: #stop when number of photos processed reaches desired value
       break
-
+      
     n += 1
     img_name = labels.readline().rstrip("\n") #reads image name from list of labels
     if img_name == "": #stop if we reach the end of the labels file
@@ -46,7 +49,6 @@ while labels:
         break
 
     image_names.append(img_name) #appends the image's name to a list of image NAMES
-    
     images.append(cv2.cvtColor(cv2.imread((img_folder + "/" + img_name)), cv2.COLOR_BGR2RGB)) #appends the image data to a list of all image DATAS
     ground_truth_count = int(labels.readline().rstrip("\n")) #extract number of faces on image [according to label file]
     ground_truths[img_name] = [] #initialize dictionary of ground_truths for the image, where ground_truth boxes will be stored
@@ -184,49 +186,143 @@ def new_run(patch_used, original_images, amplification_factor:int):
         AS = [] # List of Adversarial Samples for this image (multiple faces -> multiple samples)
         faces = result[image_nr] #access face detection results for current image
         
-        # create the Adversarial Sample item to be added to the Adversarial Sample Set for this image
+        # draw detected face + plaster patch over source
         for j in range(len(faces)):
             bounding_box = faces[j]['box']
             confidence_score = faces[j]['confidence']
 
             for ground_truth_bounding_box in ground_truths[image_names[image_nr]]:  # check each possible ground truth box, instead of assuming they're ordered
-                if (IoU(bounding_box, ground_truth_bounding_box) > lambda_IoU):                                       # Perform IoU as per the paper (pg. 8)
+                if (IoU(bounding_box, ground_truth_bounding_box) > lambda_IoU):                                       # """ might be relevant? """
                     AS.append({'anchor': bounding_box, 'ground_truth_bounding_box': ground_truth_bounding_box,
                                'confidence_score': confidence_score, 'patch': patch_used})
-                               
-        ASes.append({'ground_truth_image': images[image_nr], 'AS': AS}) #Add the Adversarial Sample item to the total Adversarial Sample Set.
-        
-    return ASes, adv_img, tmp_patch #Adverarial Sample Set, adversarial patch applied to the image, and the latest patch
 
+            # print("GROUND: ")
+            # print(ground_truth_bounding_box)
+
+            # print("AS: ")
+            # print(AS)
+
+        ASes.append({'ground_truth_image': images[image_nr], 'AS': AS})
+        # print(ASes)
+
+    # AS = [ASi for ASi in AS if IoU(ASi[0], ASi[1]) > lambda_IoU]
+    return ASes, adv_img, tmp_patch
+
+#"""
 #FOR PATCH INITIALIZATION FROM 0
 init_patch = np.random.randint(255, size=(128, 128, 3),
                                dtype=np.uint8)  # Patch Initialization - Set w^P and h^P = 128 to match the paper
+#"""
 
+"""
 #FOR OVERTAKING EXISTING PATCH
-#init_patch = cv2.cvtColor(cv2.imread((img_folder + "/" + "start_patch.jpg")), cv2.COLOR_BGR2RGB)
+init_patch = cv2.cvtColor(cv2.imread((img_folder + "/" + "start_patch.jpg")), cv2.COLOR_BGR2RGB)
+"""
+# s1 = run(init_patch, images)  # should be fineyy
+# output_images(s1, images)
+# input("Check images now...")
 
-old_patch = tf.cast(init_patch, dtype=tf.float32) #cast patch to Tensor
+#a = apply_patch(images, init_patch)
+#s2 = run(init_patch, a)  # should be fineyy
+#output_images(s2, a)
 
-amplification_factor = 100000 #used to amplify the gradient, so changes are visible. Recommended values: 100 000 to 10 000 000
+old_patch = tf.cast(init_patch, dtype=tf.float32)
+
+amplification_factor = 1000000
 
 cv2.imwrite(img_folder + "/" + "_out_" + "INIT_"+ "AmpF=" + str(amplification_factor) +"_Adversarial_Patch.jpg",
-            cv2.cvtColor(init_patch, cv2.COLOR_RGB2BGR)) # save the initial patch to the local folder
+            cv2.cvtColor(init_patch, cv2.COLOR_RGB2BGR))
 
-for epoch in range(121): # Number of epochs to run the patch optimization algorithm for
-    
-    bbox, adv_img, new_patch = new_run(old_patch, images, amplification_factor) # receive the freshly detected faces in bbox, image with the patch applied in adv_img and latest version of the patch in new_patch
-    
-    cv2.imwrite(img_folder + "/" + "_out_" + str(epoch) + "_AmpF=" + str(amplification_factor) + "_Adversarial_Patch.jpg", cv2.cvtColor(new_patch.numpy(), cv2.COLOR_RGB2BGR)) # Save the patch for each epoch in the local folder
+for epoch in range(121):
+    '''
+    mu = 0
+    for name in list(vars()):
+        print(name, " ### ", sys.getsizeof(name))
+        mu = mu + sys.getsizeof(name)
+    print(mu)
+    '''
+    bbox, adv_img, new_patch = new_run(old_patch, images, amplification_factor)
+    #print(tf.cast(new_patch, dtype=tf.float32)-old_patch)
+    """
+    if i ==0:
+      output_images(bbox, adv_img, "first")
+    elif i == 49:
+      output_images(bbox, adv_img, "last")    np_patch_out = new_patch.numpy()
+    np_patch_out = np.fix(np_patch_out)
+    cv2.imwrite(img_folder + "/" + "_out_" + str(epoch) + "_AmpF=" + str(amplification_factor) + "_Adversarial_Patch.jpg",
+                cv2.cvtColor(np_patch_out, cv2.COLOR_RGB2BGR))
 
-    if epoch % 5 == 0: # Save the images with face detection results every 5 epochs for visual reference on patch's performance
-      output_images(bbox, adv_img, new_patch, str(epoch)+"_") # requires bounding boxes, images with the patch applied, latest patch and an optional prefix for the name on the images saved
-    
-    #Gradually reduce amplification factor, at the same rate as the learning rate used in the paper
+    else:
+      output_images(bbox, adv_img)
+    """
+    cv2.imwrite(img_folder + "/" + "_out_" + str(epoch) + "_AmpF=" + str(amplification_factor) + "_Adversarial_Patch.jpg", cv2.cvtColor(new_patch.numpy(), cv2.COLOR_RGB2BGR))
+
+    if epoch % 5 == 0:
+      output_images(bbox, adv_img, new_patch, str(epoch)+"_")
+
+
     if epoch == 60:
-        amplification_factor *= 0.1 
+        amplification_factor *= 0.1
     if epoch == 80:
         amplification_factor *= 0.1
 
-    old_patch = tf.cast(new_patch, dtype=tf.float32) # Set up newest patch to be used in further patch optimizations
+    old_patch = tf.cast(new_patch, dtype=tf.float32)
 
     print("Epoch", epoch)
+
+    mu = 0
+    '''
+    for name in list(vars()):
+        print(name, " ### ", sys.getsizeof(name))
+        mu = mu + sys.getsizeof(name)
+    print(mu)
+    '''
+    """
+      if i == 1:
+        patch = cv2.cvtColor(cv2.imread(('wizards.jpg')), cv2.COLOR_BGR2RGB)
+    """
+'''
+def loss_object():
+    #print(patch)
+    p = patch.numpy()
+    #print(p)
+    a = apply_patch(images, p)
+    s2 = run(p, a)
+
+    confidence_list = []
+    for ASes_of_one_image in s2:
+        #print(ASes_of_one_image['AS'])
+        #print("______________________________________________________________________________________________________________")
+        for AS_of_one_image in ASes_of_one_image['AS']:
+            #print(AS_of_one_image['confidence_score'])
+            confidence_list.append(AS_of_one_image['confidence_score'])
+
+    loss = tf.divide(tf.math.reduce_sum(tf.math.log(confidence_list)), len(confidence_list))
+
+    return loss
+'''
+
+'''
+opt = tf.keras.optimizers.SGD(learning_rate=0.01) #learning rate laut dem paper
+for i in range(50):
+    with tf.GradientTape() as tape:
+        tape.watch(patch)
+        loss = loss_object()
+    grads = tape.gradient((loss, patch))
+    processed_grads = [g for g in grads]
+    grads_and_vars = zip(processed_grads, patch)
+    opt.applygradients(grads_and_vars)
+out_patch = patch.numpy
+cv2.imwrite(img_folder + "/" + "_out_" + "Patch", cv2.cvtColor(out_patch, cv2.COLOR_RGB2BGR))
+'''
+
+
+'''
+opt = tf.keras.optimizers.SGD(learning_rate=alpha)
+for i in range(50):
+    opt.minimize(loss_object(), patch)
+out_patch = patch.numpy
+cv2.imwrite(img_folder + "/" + "_out_" + "Patch",
+            cv2.cvtColor(out_patch, cv2.COLOR_RGB2BGR))
+'''
+
