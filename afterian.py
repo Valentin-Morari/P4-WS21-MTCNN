@@ -20,25 +20,25 @@ TF_CPP_VMODULE=segment=2
 convert_graph=2
 convert_nodes=2
 trt_engine_op=2
-
-
-physical_devices = tf.config.list_physical_devices('GPU')
-
-for gpu in physical_devices:
-    tf.config.experimental.set_memory_growth(gpu, True)
-
-visible_devices = physical_devices[0]
-
-tf.config.experimental.set_visible_devices(visible_devices, 'GPU')
 """
 
+physical_devices = tf.config.list_physical_devices('GPU')
+"""
+for gpu in physical_devices:
+    tf.config.experimental.set_memory_growth(gpu, True)
+"""
+visible_devices = physical_devices[0:2]
+
+tf.config.experimental.set_visible_devices(visible_devices, 'GPU')
+
+"""
 os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"
 os.environ["CUDA_VISIBLE_DEVICES"]="0"
 
 config = tf.compat.v1.ConfigProto()
 config.gpu_options.allow_growth = True
 session = tf.compat.v1.Session(config=config)
-
+"""
 # Loads the images into an array
 img_folder = "Face_Control"
 
@@ -91,7 +91,7 @@ labels = open(img_folder + "/" + "wider_face_train_bbx_gt.txt", "r")
 
 n = 0
 while labels:
-    if n == 2: #number of photos processed
+    if n == 20: #number of photos processed
       break
 
     n += 1
@@ -301,7 +301,7 @@ def new_run(patch_used, original_images, amplification_factor:int):
         image_count += 1
         #print("HELLO:",tf.get_logger())
 
-        if image_count % 9 == 0:
+        if image_count % 1 == 0:
             detector = MTCNN()
             gc.collect()
     

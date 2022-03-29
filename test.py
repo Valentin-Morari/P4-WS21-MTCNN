@@ -1,31 +1,22 @@
-import gc
+import gc #used for garbage collection and reducing overall RAM usage
 
 import tensorflow as tf
-import cv2
-from mtcnn import MTCNN
+import cv2 #image processing library
+from mtcnn import MTCNN #face detection library (local -> check mtcnn folder)
 import numpy as np
 import math
-import copy
+import copy #used for creating deep copies in order to not modify the originals
 import os
-import psutil
-
-import memory_profiler
-from memory_profiler import profile
-
-#detector = MTCNN()
 
 # Loads the images into an array
 img_folder = "Face_Control"
-
-# global AS
-# AS = []
-# Only saves ground_truth bounding boxes given by the detector since they already positive samples and therefore satisfy IoU(Ai,Bi) where Ai stands for anchor and Bi stands for ground-truth bounding box.
-# Each entry represents one bounding box
 images = []
 image_names = []
 ground_truths = {}
 
 """
+Adversarial Sample Set structure:
+
 ASes = [ # list of images with their ASes 
         {
             'ground_truth_image': [x][x][3], # image without a patch 
@@ -40,61 +31,35 @@ ASes = [ # list of images with their ASes
          }
         ]
 """
-
-#ASes = []
-
-#labels = open(img_folder + "/" + "labels.txt", "r")
-"""
-while labels:
-    img_name = labels.readline().rstrip("\n")
-    if img_name == "":
-        labels.close()
-        break
-
-    image_names.append(img_name)
-
-    images.append(cv2.cvtColor(cv2.imread((img_folder + "/" + img_name)), cv2.COLOR_BGR2RGB))
-    ground_truth_count = int(labels.readline().rstrip("\n"))
-
-    ground_truths[img_name] = []
-
-    for i in range(ground_truth_count):
-        ground_truths[img_name].append([int(value) for value in labels.readline().rstrip("\n").split()])
-"""
-
   
-labels = open(img_folder + "/" + "wider_face_train_bbx_gt.txt", "r")
-img_count = 0
-while labels:
-    if img_count == 460: #number of photos processed
-      break
+labels = open(img_folder + "/" + "wider_face_train_bbx_gt.txt", "r") #read WIDERFACE ground truth labels (taken from the training set)
+for _ in range(40077): #skip to the dataset relevant to us
+      next(labels)
+    
+n = 0 #number of photos processed
 
-    img_count += 1
-    img_name = labels.readline().rstrip("\n")
-    print(img_name)
-    if img_name == "":
+while labels:
+    if n == 550: #stop when number of photos processed reaches desired value
+      break
+      
+    n += 1
+    img_name = labels.readline().rstrip("\n") #reads image name from list of labels
+    if img_name == "": #stop if we reach the end of the labels file
         labels.close()
         break
 
-    image_names.append(img_name)
-
-
-    images.append(cv2.cvtColor(cv2.imread((img_folder + "/" + img_name)), cv2.COLOR_BGR2RGB))
-    ground_truth_count = int(labels.readline().rstrip("\n"))
-    print("HAS", ground_truth_count, "FACES")
-
-    ground_truths[img_name] = []
+    image_names.append(img_name) #appends the image's name to a list of image NAMES
+    images.append(cv2.cvtColor(cv2.imread((img_folder + "/" + img_name)), cv2.COLOR_BGR2RGB)) #appends the image data to a list of all image DATAS
+    ground_truth_count = int(labels.readline().rstrip("\n")) #extract number of faces on image [according to label file]
+    ground_truths[img_name] = [] #initialize dictionary of ground_truths for the image, where ground_truth boxes will be stored
 
     if ground_truth_count == 0:
         ground_truths[img_name].append([int(value) for value in labels.readline().rstrip("\n").split()][0:4]) # There are no faces, so the ground_truth is all 0 [so the code can run]
-        print(ground_truths[img_name])
-
+        
     for i in range(ground_truth_count):
-        ground_truths[img_name].append([int(value) for value in labels.readline().rstrip("\n").split()][0:4]) # take only first 4 values for box size
+        ground_truths[img_name].append([int(value) for value in labels.readline().rstrip("\n").split()][0:4]) # take only first 4 values for box size, as WIDERFACE maps out more values by default (such as luminosity)
 
-
-  
-# alpha = 0.28 # - To match paper's examples
+# alpha = 0.28 # - To match paper's given examples
 alpha = 0.5  # - To match paper's concrete parameters
 lambda_IoU = 0.6  # To match paper's concrete parameters
 
@@ -104,38 +69,30 @@ patch = tf.Variable(np.random.randint(255, size=(128, 128, 3),
 def IoU(boxA,
         boxB):  # Code taken directly from https://www.pyimagesearch.com/2016/11/07/intersection-over-union-iou-for-object-detection/
     # determine the (x, y)-coordinates of the intersection rectangle
-    # print("BoxA: ")
-    # print(boxA)
-    # print("BoxB: ")
-    # print(boxB)
     xA = max(boxA[0], boxB[0])
     yA = max(boxA[1], boxB[1])
-    # MTCNN doesn't give the end points in [2] and [3] but the distance from the start point to the end point
+    # MTCNN doesn't give the end points in [2] and [3] but the distance from the start point to the end point (width and height)
     xB = min(boxA[0] + boxA[2], boxB[0] + boxB[2])
     yB = min(boxA[1] + boxA[3], boxB[1] + boxB[3])
-    # print("xA = %d -- yA = %d -- xB = %d -- yB = %d" % (xA,yA,xB,yB))
     # compute the area of intersection rectangle
     interArea = max(0, xB - xA + 1) * max(0, yB - yA + 1)
-    # compute the area of both the prediction and ground-truth
-    # rectangles
+    # compute the area of both the prediction and ground-truth rectangles
     boxAArea = (boxA[2]) * (boxA[3])
     boxBArea = (boxB[2]) * (boxB[3])
-    # compute the intersection over union by taking the intersection
-    # area and dividing it by the sum of prediction + ground-truth
-    # areas - the interesection area
-    # print("interArea = %d -- boxAArea = %d -- boxBArea = %d" % (interArea, boxAArea, boxBArea))
+    # compute the intersection over union by taking the intersection area and dividing it by the sum of prediction + ground-truth areas - the interesection area
     iou = interArea / float(boxAArea + boxBArea - interArea)
     # return the intersection over union value
-    #print(iou)
     return iou
 
 
 def output_images(ASes_output, originals, patch_output, prefix = ""):
+    """ handles storing the images outside of the program's memory """
+    
     working_images = copy.deepcopy(originals)  # don't modify the original pictures
 
     for image_nr in range(len(working_images)):  # loop through all
 
-        ground_truth_boxes = ground_truths[image_names[image_nr]]
+        ground_truth_boxes = ground_truths[image_names[image_nr]] #pull up the ground_truths appropriate to the image
 
         for ground_truth_bounding_box in ground_truth_boxes:  # ground truth loop
             cv2.rectangle(working_images[image_nr],
@@ -143,53 +100,48 @@ def output_images(ASes_output, originals, patch_output, prefix = ""):
                           (ground_truth_bounding_box[0] + ground_truth_bounding_box[2],
                            ground_truth_bounding_box[1] + ground_truth_bounding_box[3]),
                           (0, 255, 0),
-                          2)
+                          2) #imprint a green rectangle over the ground truth coordinates (ground_truth_bounding_box[2] and [3] are width and height, respectively)
 
         for AS_of_one_image in ASes_output[image_nr]['AS']:
-            bounding_box = AS_of_one_image['anchor']  # guess loop
-            # print(bounding_box)
-            # print(ASes_output[image_nr]['AS'])
-
+            bounding_box = AS_of_one_image['anchor']  # extract detected bounding boxes
+            confidence_score = AS_of_one_image['confidence_score'].numpy() # extract confidence score of detected bounding box
+            
             # Makes the bounding box visible
             cv2.rectangle(working_images[image_nr],
                           (bounding_box[0], bounding_box[1]),
                           (bounding_box[0] + bounding_box[2], bounding_box[1] + bounding_box[3]),
                           (0, 155, 255),
-                          2)
-        #print(working_images[image_nr])
+                          2) #imprint a blue rectangle over the detected bounding box of the face
+            
+            cv2.putText(working_images[image_nr], str(confidence_score), (bounding_box[0], bounding_box[1]), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2, cv2.LINE_AA) #places confidence score over the detected face boxes
+                          
         # Creates working_images in which the faces are marked through their bounding boxes
         cv2.imwrite(img_folder + "/" + "_out_" + prefix + image_names[image_nr].split("/")[1],
                     cv2.cvtColor(working_images[image_nr], cv2.COLOR_RGB2BGR))
 
-        np_patch_out = patch_output.numpy()
+        np_patch_out = patch_output.numpy() #convert from Tensorflow variable to numpy, numerical-only representation
         np_patch_out = np.fix(np_patch_out)
         cv2.imwrite(img_folder + "/" + "_out_" + prefix + "Adversarial_Patch.jpg",
-                    cv2.cvtColor(np_patch_out, cv2.COLOR_RGB2BGR))
+                    cv2.cvtColor(np_patch_out, cv2.COLOR_RGB2BGR)) # Stores and overwrites latest Adversarial_Patch image in local folder (used for visual convenience)
         
 
 def apply_patch(originals, patch):
+    """ Applies the adversarial patch onto the original pictures """
+    
     working_images = copy.deepcopy(originals)  # don't modify the original pictures
-    for image_nr in range(len(working_images)):
+    for image_nr in range(len(working_images)): # loop through the copied pictures
 
-        i = 0  # used for pairing items in AS
-
-        ground_truth_boxes = ground_truths[image_names[image_nr]]
+        ground_truth_boxes = ground_truths[image_names[image_nr]] #pull up ground_truth data for this picture
 
         # draw detected face + plaster patch over source
         for bounding_box in ground_truth_boxes:  # ground truth loop
+            resize_value = alpha * math.sqrt(bounding_box[2] * bounding_box[3]) #as per the paper (pg. 7 of "Design and Interpretation of Universal Adversarial Patches in Face Detection")
+            resized_P = cv2.resize(patch, (round(resize_value), round(resize_value))) #as per the paper (pg. 7 of "Design and Interpretation of Universal Adversarial Patches in Face Detection")
 
-            if i >= len(ground_truths[image_names[image_nr]]):
-                B = ground_truths[image_names[image_nr]][0]
-            else:
-                B = ground_truths[image_names[image_nr]][i]
+            x_P = round(bounding_box[2] / 2) # as per the paper, x_P is in the center position of the bounding box
+            y_P = round(resize_value / 2) # as per the paper, y_P is in the center position of the bounding box
 
-            resize_value = alpha * math.sqrt(bounding_box[2] * bounding_box[3])
-            resized_P = cv2.resize(patch, (round(resize_value), round(resize_value)))
-
-            x_P = round(bounding_box[2] / 2)
-            y_P = round(resize_value / 2)
-
-            # draw patch over source image
+            # draw patch over source image, by specifying the coordinates to overwrite
             working_images[image_nr][
             y_P + bounding_box[1] - round(resized_P.shape[1] / 2):y_P + bounding_box[1] - round(
                 resized_P.shape[1] / 2) + resized_P.shape[1],
@@ -198,115 +150,48 @@ def apply_patch(originals, patch):
 
     return working_images
 
-'''
-def run(patch_used, edited_images):
-    # global AS  # AS is broken
-    # select for AS based on IoU > 0.6
-    # AS = []
-    # Detects faces
-    result = [detector.detect_faces(edited_images[i]) for i in range(len(edited_images))]
-
-    ASes = []  # Reset Adversarial Samples when re-running the algorithm
-
-    # Extracts the bounding boxes from the detected faces
-    for image_nr in range(len(edited_images)):
-
-        AS = []
-
-        i = 0  # used for pairing items in AS
-
-        # ground_truth_boxes = ground_truths[image_names[image_nr]]
-
-        faces = result[image_nr]
-        # draw detected face + plaster patch over source
-        for j in range(len(faces)):
-            bounding_box = faces[j]['box']
-            # print("BOUND: ")
-            # print(bounding_box)
-            confidence_score = faces[j]['confidence']
-
-            for ground_truth_bounding_box in ground_truths[
-                image_names[image_nr]]:  # check each possible ground truth box, instead of assuming they're ordered
-                if (IoU(bounding_box, ground_truth_bounding_box) > lambda_IoU):
-                    AS.append({'anchor': bounding_box, 'ground_truth_bounding_box': ground_truth_bounding_box,
-                               'confidence_score': confidence_score, 'patch': patch_used})
-
-            # print("GROUND: ")
-            # print(ground_truth_bounding_box)
-
-            # print("AS: ")
-            # print(AS)
-
-        ASes.append({'ground_truth_image': images[image_nr], 'AS': AS})
-        # print(ASes)
-
-    # AS = [ASi for ASi in AS if IoU(ASi[0], ASi[1]) > lambda_IoU]
-    return ASes
-'''
-
 def new_run(patch_used, original_images, amplification_factor:int):
-    # global AS  # AS is broken
-    # select for AS based on IoU > 0.6
-    # AS = []
-    # Detects faces
-    #result, adv_img = [detector.new_detect_faces(original_images[i], patch_used, ground_truths[image_names[i]]) for i in range(len(original_images))]
-    result = []
-    adv_img = []
-    tmp_patch = patch_used
-    image_count = 0
-    detector = MTCNN()
-    for i in range(len(original_images)):
-        process = psutil.Process(os.getpid())
-        print("IN TOTAL", process.memory_info().rss / 1000000, "MB")
+    """ runs one epoch """
+    
+    result = [] #stores MTCNN face detection result
+    adv_img = [] #stores images with patch applied to them
+    tmp_patch = patch_used #initialize temporary patch value to input patch
+    detector = MTCNN() #initialize the MTCNN detector (repeated for alleviating RAM)
+    
+    for i in range(len(original_images)): #process every image stored 
         
-        #print(tmp_patch,tf.math.scalar_mul(0.5, tmp_patch))
+        print(i, "_", image_names[i])
 
-        print(image_count, "_", image_names[i])
-
-        #Restarting MTCNN every 9 images, to save memory. 10 already rises up to 8GB sometimes.
-        '''
-        detector = MTCNN()
-        gc.collect()
-        '''
-
-        tmp_result, tmp_adv_img, new_patch = detector.new_detect_faces(original_images[i], tmp_patch
-                                                                       , ground_truths[image_names[i]], amplification_factor)
-        #print(orig-patch_used)
-        tmp_patch = new_patch
-        result.append(tmp_result)
-        adv_img.append(tmp_adv_img)
-
-        image_count += 1
-
-        if image_count % 9 == 0:
+        try: #handles exotic errors (often related to extreme bounding box sizes) by skipping over images that produce them
+          tmp_result, tmp_adv_img, new_patch = detector.new_detect_faces(original_images[i], tmp_patch, ground_truths[image_names[i]], amplification_factor) #detect faces on given images
+          
+          tmp_patch = new_patch #store new patch in the temporary variable
+          result.append(tmp_result) #store face detection results
+          adv_img.append(tmp_adv_img) #store image with patch applied to it
+          
+        except Exception as e: #if exception is met store empty result and image without patch applied to it
+          print("Image", i, " (skipping) has the following error:", e)
+          result.append([])
+          adv_img.append(original_images[i])
+        
+        #Restarting MTCNN every 3 images, to save memory. It may rise up to 8GB sometimes. Reseting also resets RAM usage, at least under Windows.
+        if i % 3 == 0:
             detector = MTCNN()
             gc.collect()
-    
-    #print("RESULT:")
-    #print(result)
-    ASes = []  # Reset Adversarial Samples when re-running the algorithm
+        
+    ASes = []  # Reset Adversarial Sample Set each epoch 
 
     # Extracts the bounding boxes from the detected faces
     for image_nr in range(len(original_images)):
-
-        AS = []
-
-        i = 0  # used for pairing items in AS
-
-        # ground_truth_boxes = ground_truths[image_names[image_nr]]
-
-        faces = result[image_nr]
-        #print(image_nr)
-        #print(faces)
+        AS = [] # List of Adversarial Samples for this image (multiple faces -> multiple samples)
+        faces = result[image_nr] #access face detection results for current image
+        
         # draw detected face + plaster patch over source
         for j in range(len(faces)):
             bounding_box = faces[j]['box']
-            # print("BOUND: ")
-            # print(bounding_box)
             confidence_score = faces[j]['confidence']
 
-            for ground_truth_bounding_box in ground_truths[
-                image_names[image_nr]]:  # check each possible ground truth box, instead of assuming they're ordered
+            for ground_truth_bounding_box in ground_truths[image_names[image_nr]]:  # check each possible ground truth box, instead of assuming they're ordered
                 if (IoU(bounding_box, ground_truth_bounding_box) > lambda_IoU):                                       # """ might be relevant? """
                     AS.append({'anchor': bounding_box, 'ground_truth_bounding_box': ground_truth_bounding_box,
                                'confidence_score': confidence_score, 'patch': patch_used})
@@ -323,9 +208,16 @@ def new_run(patch_used, original_images, amplification_factor:int):
     # AS = [ASi for ASi in AS if IoU(ASi[0], ASi[1]) > lambda_IoU]
     return ASes, adv_img, tmp_patch
 
+#"""
+#FOR PATCH INITIALIZATION FROM 0
 init_patch = np.random.randint(255, size=(128, 128, 3),
                                dtype=np.uint8)  # Patch Initialization - Set w^P and h^P = 128 to match the paper
+#"""
 
+"""
+#FOR OVERTAKING EXISTING PATCH
+init_patch = cv2.cvtColor(cv2.imread((img_folder + "/" + "start_patch.jpg")), cv2.COLOR_BGR2RGB)
+"""
 # s1 = run(init_patch, images)  # should be fineyy
 # output_images(s1, images)
 # input("Check images now...")
@@ -336,10 +228,10 @@ init_patch = np.random.randint(255, size=(128, 128, 3),
 
 old_patch = tf.cast(init_patch, dtype=tf.float32)
 
-amplification_factor = 10000000
+amplification_factor = 1000000
 
-cv2.imwrite(img_folder + "/" + "_out_" + "INIT_" + "AmpF=" + str(amplification_factor) + "_IMG_COUNT=" + str(img_count)
-            +"_Adversarial_Patch.jpg", cv2.cvtColor(init_patch, cv2.COLOR_RGB2BGR))
+cv2.imwrite(img_folder + "/" + "_out_" + "INIT_"+ "AmpF=" + str(amplification_factor) +"_Adversarial_Patch.jpg",
+            cv2.cvtColor(init_patch, cv2.COLOR_RGB2BGR))
 
 for epoch in range(121):
     '''
@@ -355,17 +247,19 @@ for epoch in range(121):
     if i ==0:
       output_images(bbox, adv_img, "first")
     elif i == 49:
-      output_images(bbox, adv_img, "last")
+      output_images(bbox, adv_img, "last")    np_patch_out = new_patch.numpy()
+    np_patch_out = np.fix(np_patch_out)
+    cv2.imwrite(img_folder + "/" + "_out_" + str(epoch) + "_AmpF=" + str(amplification_factor) + "_Adversarial_Patch.jpg",
+                cv2.cvtColor(np_patch_out, cv2.COLOR_RGB2BGR))
+
     else:
       output_images(bbox, adv_img)
     """
-    if epoch % 10 == 0:
-      # output_images(bbox, adv_img, new_patch, str(epoch)+"_")
+    cv2.imwrite(img_folder + "/" + "_out_" + str(epoch) + "_AmpF=" + str(amplification_factor) + "_Adversarial_Patch.jpg", cv2.cvtColor(new_patch.numpy(), cv2.COLOR_RGB2BGR))
 
-      np_patch_out = new_patch.numpy()
-      np_patch_out = np.fix(np_patch_out)
-      cv2.imwrite(img_folder + "/" + "_out_" + str(epoch) + "_AmpF=" + str(amplification_factor) + "_IMG_COUNT="
-                  + str(img_count) + "_Adversarial_Patch.jpg", cv2.cvtColor(np_patch_out, cv2.COLOR_RGB2BGR))
+    if epoch % 5 == 0:
+      output_images(bbox, adv_img, new_patch, str(epoch)+"_")
+
 
     if epoch == 60:
         amplification_factor *= 0.1
