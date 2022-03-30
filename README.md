@@ -6,3 +6,5 @@ Run it by calling:
   2. python3 test.py
   
 For the O-MTCNN attack, the main file to be modified is mtcnn.py in the folder mtcnn. 
+
+Alternatively, a pre-made venv environment is provided. Activate using source bin/activate and then run using python3 test.py
