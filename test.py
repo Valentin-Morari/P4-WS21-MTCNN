@@ -33,13 +33,14 @@ ASes = [ # list of images with their ASes
 """
   
 labels = open(img_folder + "/" + "wider_face_train_bbx_gt.txt", "r") #read WIDERFACE ground truth labels (taken from the training set)
-for _ in range(40077): #skip to the dataset relevant to us
-      next(labels)
+
+#for _ in range(40077): #skip to the dataset relevant to us
+#      next(labels)
     
 n = 0 #number of photos processed
 
 while labels:
-    if n == 550: #stop when number of photos processed reaches desired value
+    if n == 100: #stop when number of photos processed reaches desired value
       break
       
     n += 1
@@ -49,8 +50,8 @@ while labels:
         break
 
     image_names.append(img_name) #appends the image's name to a list of image NAMES
-    images.append(cv2.cvtColor(cv2.imread((img_folder + "/" + img_name)), cv2.COLOR_BGR2RGB)) #appends the image data to a list of all image DATAS
-    ground_truth_count = int(labels.readline().rstrip("\n")) #extract number of faces on image [according to label file]
+    images.append(cv2.cvtColor(cv2.imread((img_folder + "/" + img_name)), cv2.COLOR_BGR2RGB)) #appends the image data to a list of all image DATAS (loads into memory)
+    ground_truth_count = int(labels.readline().rstrip("\n")) #extract number of faces on image [according to label file, WIDERFACE format]
     ground_truths[img_name] = [] #initialize dictionary of ground_truths for the image, where ground_truth boxes will be stored
 
     if ground_truth_count == 0:
@@ -228,7 +229,7 @@ init_patch = cv2.cvtColor(cv2.imread((img_folder + "/" + "start_patch.jpg")), cv
 
 old_patch = tf.cast(init_patch, dtype=tf.float32)
 
-amplification_factor = 1000000
+amplification_factor = 500000
 
 cv2.imwrite(img_folder + "/" + "_out_" + "INIT_"+ "AmpF=" + str(amplification_factor) +"_Adversarial_Patch.jpg",
             cv2.cvtColor(init_patch, cv2.COLOR_RGB2BGR))
