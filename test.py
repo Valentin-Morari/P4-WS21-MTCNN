@@ -14,6 +14,15 @@ images = []
 image_names = []
 ground_truths = {}
 
+
+os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"
+os.environ["CUDA_VISIBLE_DEVICES"]="6"
+
+config = tf.compat.v1.ConfigProto()
+config.gpu_options.allow_growth = True
+session = tf.compat.v1.Session(config=config)
+
+
 """
 Adversarial Sample Set structure:
 
@@ -117,12 +126,11 @@ def output_images(ASes_output, originals, patch_output, prefix = ""):
             cv2.putText(working_images[image_nr], str(confidence_score), (bounding_box[0], bounding_box[1]), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2, cv2.LINE_AA) #places confidence score over the detected face boxes
                           
         # Creates working_images in which the faces are marked through their bounding boxes
-        cv2.imwrite(img_folder + "/" + "_out_" + prefix + image_names[image_nr].split("/")[1],
-                    cv2.cvtColor(working_images[image_nr], cv2.COLOR_RGB2BGR))
+        cv2.imwrite(img_folder + "/" + "Bastion_Results_Valentin" + "/" + "_out_" + prefix + image_names[image_nr].split("/")[1], cv2.cvtColor(working_images[image_nr], cv2.COLOR_RGB2BGR))
 
         np_patch_out = patch_output.numpy() #convert from Tensorflow variable to numpy, numerical-only representation
         np_patch_out = np.fix(np_patch_out)
-        cv2.imwrite(img_folder + "/" + "_out_" + prefix + "Adversarial_Patch.jpg",
+        cv2.imwrite(img_folder + "/" + "Bastion_Results_Valentin" + "/" + "_out_" + prefix + "Adversarial_Patch.jpg",
                     cv2.cvtColor(np_patch_out, cv2.COLOR_RGB2BGR)) # Stores and overwrites latest Adversarial_Patch image in local folder (used for visual convenience)
         
 
@@ -209,16 +217,16 @@ def new_run(patch_used, original_images, amplification_factor:int):
     # AS = [ASi for ASi in AS if IoU(ASi[0], ASi[1]) > lambda_IoU]
     return ASes, adv_img, tmp_patch
 
-#"""
+"""
 #FOR PATCH INITIALIZATION FROM 0
 init_patch = np.random.randint(255, size=(128, 128, 3),
                                dtype=np.uint8)  # Patch Initialization - Set w^P and h^P = 128 to match the paper
-#"""
-
 """
+
+#"""
 #FOR OVERTAKING EXISTING PATCH
 init_patch = cv2.cvtColor(cv2.imread((img_folder + "/" + "start_patch.jpg")), cv2.COLOR_BGR2RGB)
-"""
+#"""
 # s1 = run(init_patch, images)  # should be fineyy
 # output_images(s1, images)
 # input("Check images now...")
@@ -229,7 +237,7 @@ init_patch = cv2.cvtColor(cv2.imread((img_folder + "/" + "start_patch.jpg")), cv
 
 old_patch = tf.cast(init_patch, dtype=tf.float32)
 
-amplification_factor = 500000
+amplification_factor = 10000000
 
 cv2.imwrite(img_folder + "/" + "_out_" + "INIT_"+ "AmpF=" + str(amplification_factor) +"_Adversarial_Patch.jpg",
             cv2.cvtColor(init_patch, cv2.COLOR_RGB2BGR))
@@ -256,7 +264,7 @@ for epoch in range(121):
     else:
       output_images(bbox, adv_img)
     """
-    cv2.imwrite(img_folder + "/" + "_out_" + str(epoch) + "_AmpF=" + str(amplification_factor) + "_Adversarial_Patch.jpg", cv2.cvtColor(new_patch.numpy(), cv2.COLOR_RGB2BGR))
+    cv2.imwrite(img_folder + "/" + "Bastion_Results_Valentin" + "/" + "_out_" + str(epoch) + "_AmpF=" + str(amplification_factor) + "_Adversarial_Patch.jpg", cv2.cvtColor(new_patch.numpy(), cv2.COLOR_RGB2BGR))
 
     if epoch % 5 == 0:
       output_images(bbox, adv_img, new_patch, str(epoch)+"_")

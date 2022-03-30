@@ -34,7 +34,7 @@ tf.config.experimental.set_visible_devices(visible_devices, 'GPU')
 """
 os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID"
 os.environ["CUDA_VISIBLE_DEVICES"]="0"
-
+"""
 config = tf.compat.v1.ConfigProto()
 config.gpu_options.allow_growth = True
 session = tf.compat.v1.Session(config=config)
@@ -91,7 +91,11 @@ labels = open(img_folder + "/" + "wider_face_train_bbx_gt.txt", "r")
 
 n = 0
 while labels:
+<<<<<<< HEAD
+    if n == 400: #number of photos processed
+=======
     if n == 20: #number of photos processed
+>>>>>>> b55b32816ef6470b388a4d22dacf96eea65e6ade
       break
 
     n += 1
