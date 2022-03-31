@@ -49,8 +49,12 @@ labels = open(img_folder + "/" + "wider_face_train_bbx_gt.txt", "r") #read WIDER
 n = 0 #number of photos processed
 
 while labels:
-    if n == 100: #stop when number of photos processed reaches desired value
-      break
+    if n == 460: #stop when number of photos processed reaches desired value
+      labels = open(img_folder + "/" + "wider_face_train_bbx_gt.txt", "r")
+      for _ in range(40077):
+          next(labels)
+    if n == 1029:
+        break
       
     n += 1
     img_name = labels.readline().rstrip("\n") #reads image name from list of labels
@@ -126,11 +130,11 @@ def output_images(ASes_output, originals, patch_output, prefix = ""):
             cv2.putText(working_images[image_nr], str(confidence_score), (bounding_box[0], bounding_box[1]), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2, cv2.LINE_AA) #places confidence score over the detected face boxes
                           
         # Creates working_images in which the faces are marked through their bounding boxes
-        cv2.imwrite(img_folder + "/" + "Bastion_Results_Valentin" + "/" + "_out_" + prefix + image_names[image_nr].split("/")[1], cv2.cvtColor(working_images[image_nr], cv2.COLOR_RGB2BGR))
+        cv2.imwrite(img_folder + "/" + "1kImgResultsValentin" + "/" + "_out_" + prefix + image_names[image_nr].split("/")[1], cv2.cvtColor(working_images[image_nr], cv2.COLOR_RGB2BGR))
 
         np_patch_out = patch_output.numpy() #convert from Tensorflow variable to numpy, numerical-only representation
         np_patch_out = np.fix(np_patch_out)
-        cv2.imwrite(img_folder + "/" + "Bastion_Results_Valentin" + "/" + "_out_" + prefix + "Adversarial_Patch.jpg",
+        cv2.imwrite(img_folder + "/" + "1kImgResultsValentin" + "/" + "_out_" + prefix + "Adversarial_Patch.jpg",
                     cv2.cvtColor(np_patch_out, cv2.COLOR_RGB2BGR)) # Stores and overwrites latest Adversarial_Patch image in local folder (used for visual convenience)
         
 
@@ -225,7 +229,7 @@ init_patch = np.random.randint(255, size=(128, 128, 3),
 
 #"""
 #FOR OVERTAKING EXISTING PATCH
-init_patch = cv2.cvtColor(cv2.imread((img_folder + "/" + "start_patch.jpg")), cv2.COLOR_BGR2RGB)
+init_patch = cv2.cvtColor(cv2.imread((img_folder + "/" + "Patches_Training" + "/" + "_out_13_AmpF=100000_Adversarial_Patch.jpg")), cv2.COLOR_BGR2RGB)
 #"""
 # s1 = run(init_patch, images)  # should be fineyy
 # output_images(s1, images)
@@ -237,9 +241,8 @@ init_patch = cv2.cvtColor(cv2.imread((img_folder + "/" + "start_patch.jpg")), cv
 
 old_patch = tf.cast(init_patch, dtype=tf.float32)
 
-amplification_factor = 10000000
-
-cv2.imwrite(img_folder + "/" + "_out_" + "INIT_"+ "AmpF=" + str(amplification_factor) +"_Adversarial_Patch.jpg",
+amplification_factor = 1000000
+cv2.imwrite(img_folder + "/" + "1kImgResultsValentin" + "/" + "_out_" + "INIT_"+ "AmpF=" + str(amplification_factor) +"_Adversarial_Patch.jpg",
             cv2.cvtColor(init_patch, cv2.COLOR_RGB2BGR))
 
 for epoch in range(121):
@@ -264,16 +267,10 @@ for epoch in range(121):
     else:
       output_images(bbox, adv_img)
     """
-    cv2.imwrite(img_folder + "/" + "Bastion_Results_Valentin" + "/" + "_out_" + str(epoch) + "_AmpF=" + str(amplification_factor) + "_Adversarial_Patch.jpg", cv2.cvtColor(new_patch.numpy(), cv2.COLOR_RGB2BGR))
+    cv2.imwrite(img_folder + "/" + "1kImgResultsValentin" + "/" + "_out_" + str(epoch) + "_AmpF=" + str(amplification_factor) + "_Adversarial_Patch.jpg", cv2.cvtColor(new_patch.numpy(), cv2.COLOR_RGB2BGR))
 
     if epoch % 5 == 0:
       output_images(bbox, adv_img, new_patch, str(epoch)+"_")
-
-
-    if epoch == 60:
-        amplification_factor *= 0.1
-    if epoch == 80:
-        amplification_factor *= 0.1
 
     old_patch = tf.cast(new_patch, dtype=tf.float32)
 
@@ -288,7 +285,7 @@ for epoch in range(121):
     '''
     """
       if i == 1:
-        patch = cv2.cvtColor(cv2.imread(('wizards.jpg')), cv2.COLOR_BGR2RGB)
+        uatch = cv2.cvtColor(cv2.imread(('wizards.jpg')), cv2.COLOR_BGR2RGB)
     """
 '''
 def loss_object():
