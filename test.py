@@ -211,14 +211,13 @@ def new_run(patch_used, original_images, amplification_factor:int):
 
 #"""
 #FOR PATCH INITIALIZATION FROM 0
-init_patch = np.random.randint(255, size=(128, 128, 3),
-                               dtype=np.uint8)  # Patch Initialization - Set w^P and h^P = 128 to match the paper
+#init_patch = np.random.randint(255, size=(128, 128, 3), dtype=np.uint8)  # Patch Initialization - Set w^P and h^P = 128 to match the paper
 #"""
 
-"""
+
 #FOR OVERTAKING EXISTING PATCH
-init_patch = cv2.cvtColor(cv2.imread((img_folder + "/" + "start_patch.jpg")), cv2.COLOR_BGR2RGB)
-"""
+init_patch = cv2.cvtColor(cv2.imread((img_folder + "/" + "Patches_Training" + "/" + "Bastion.png")), cv2.COLOR_BGR2RGB)
+
 # s1 = run(init_patch, images)  # should be fineyy
 # output_images(s1, images)
 # input("Check images now...")
