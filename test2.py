@@ -148,7 +148,7 @@ def tf_IoU(boxA, boxB):
 
     iou = interArea / (boxAArea + boxBArea - interArea)
     # return the intersection over union value
-    # print("IOU=", iou)
+
     return iou
 
 

@@ -310,15 +310,6 @@ def tf_IoU(boxA, boxB):
     xB = tf.math.minimum(boxA[0] + boxA[2], boxB[0] + boxB[2])
     yB = tf.math.minimum(boxA[1] + boxA[3], boxB[1] + boxB[3])
 
-    print("xA:")
-    print(xA)
-    print("yA:")
-    print(yA)
-    print("xB:")
-    print(xB)
-    print("yB:")
-    print(yB)
-
     # compute the area of intersection rectangle
     interArea = tf.math.maximum(0, xB - xA + 1) * tf.math.maximum(0, yB - yA + 1)
     # compute the area of both the prediction and ground-truth
@@ -328,16 +319,10 @@ def tf_IoU(boxA, boxB):
     # compute the intersection over union by taking the intersection
     # area and dividing it by the sum of prediction + ground-truth
     # areas - the interesection area
-    # print("interArea = %d -- boxAArea = %d -- boxBArea = %d" % (interArea, boxAArea, boxBArea))
-    print("InterArea:")
-    print(interArea)
-    print("BoxA:")
-    print(boxAArea)
-    print("BoxB")
-    print(boxBArea)
+
     iou = interArea / (boxAArea + boxBArea - interArea)
     # return the intersection over union value
-    print(iou)
+
     return iou
 
 def tf_IoU_multiple_boxes(bounding_boxes, ground_truths):
@@ -354,11 +339,9 @@ def tf_IoU_multiple_boxes(bounding_boxes, ground_truths):
     iou_result = []
 
     for bb in bounding_boxes:
-        print(bb)
         iou = 0
 
         for gt in ground_truths:
-            print(gt)
             new_iou = tf_IoU(bb[0:4], gt)
 
             if new_iou > iou:
@@ -367,8 +350,6 @@ def tf_IoU_multiple_boxes(bounding_boxes, ground_truths):
         if iou > 0.6:
             iou_result.append(bb)
     tf_iou_result = tf.cast(iou_result, dtype=tf.float32)
-    print("IoU PASSED")
-    print(tf_iou_result)
 
     return tf_iou_result
 
@@ -418,7 +399,6 @@ def create_adversarial_pattern(image, ground_truth_boxes, scale):
         print(loss)
 
     gradient = tape.gradient(loss, var_patch)
-    #print(gradient)
 
     return gradient, loss
 
