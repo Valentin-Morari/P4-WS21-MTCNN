@@ -4,19 +4,20 @@ import mtcnn
 from mtcnn.network.factory import NetworkFactory
 import matplotlib.pyplot as plt
 import cv2
-import pkg_resources
 import matplotlib.patches as mpatches
 import os
-
-# keras_scratch_graph problem
-# gpu version
-# gpus = tf.config.experimental.list_physical_devices('GPU')
-# tf.config.experimental.set_memory_growth(gpus[0], True)
 
 detector = mtcnn.MTCNN()
 
 
 def tf_scale_image(img, scale):
+    """
+    This function was taken from MTCNN  (__scale_image) and ported to tensorflow 2.x
+
+    :param img: Image to resized
+    :param scale: Scale factor
+    :return: Given image scaled with the specified scale factor
+    """
     height, width, _ = img.shape
     width_scaled = tf.math.ceil(width * scale)
     height_scaled = tf.math.ceil(height * scale)
@@ -31,7 +32,17 @@ def tf_scale_image(img, scale):
 
 
 def generate_bounding_box(imap, reg, scale, t):
-    # use heatmap to generate bounding boxes
+    """
+    This function was taken from MTCNN  (__generate_bounding_box) and mostly ported to tensorflow 2.x
+    It uses heatmap to generate bounding boxes
+
+    :param imap:
+    :param reg:
+    :param scale: Scale with which the image was resized
+    :param t: The steps threshold
+    :return: Bounding boxes with their confidence score and
+    """
+
     stride = 2
     cellsize = 12
 
@@ -56,7 +67,6 @@ def generate_bounding_box(imap, reg, scale, t):
 
     bbtf = positives
 
-    #TODO
     q1tf = tf.experimental.numpy.fix((stride * tf.cast(bbtf, dtype=tf.float32) + 1.) / scale)
     q2tf = tf.experimental.numpy.fix((stride * tf.cast(bbtf, dtype=tf.float32) + cellsize) / scale)
 
@@ -68,17 +78,16 @@ def generate_bounding_box(imap, reg, scale, t):
 
 def nms(boxes, threshold, method):
     """
-    Non Maximum Suppression.
+    Non Maximum Suppression. This function was taken from MTCNN (__nms). And slightly ported to
+    TensorFlow.
 
     :param boxes: Tensorflow np array with bounding boxes.
-    :param threshold:
+    :param threshold: The threshold
     :param method: NMS method to apply. Available values ('Min', 'Union')
-    :return:
+    :return: Bounding boxes from boxes, which had the highest confidence score
+             than similar placed bounding boxes.
     """
 
-    '''
-    I think that this creates an NONE gradient.
-    '''
     if tf.size(boxes) == 0:  # start here
         return tf.reshape(tf.convert_to_tensor(()), (0, 3))
 
@@ -136,12 +145,18 @@ def nms(boxes, threshold, method):
         sorted_s = sorted_s[np.where(o <= threshold)]
 
     pick = pick[0:counter]
-    # pick = tf.cast(pick, dtype=tf.int32) # I have to use the type tf.int32 and not tf.int16
+
     return pick
 
 
 def rerec(bbox):
-    # convert bbox to square
+    """
+    This function was taken from MTCNN  (__rerec) and ported to tensorflow 2.x
+    It reshapes the bounding box to a square by elongating the shorter sides.
+
+    :param bbox: Bounding box
+    :return: The bounding box converted to a square
+    """
 
     height = bbox[:, 3] - bbox[:, 1]
     width = bbox[:, 2] - bbox[:, 0]
@@ -152,12 +167,26 @@ def rerec(bbox):
     v23 = bbox[:, 0:2] + tf.transpose(tf.tile([max_side_length], [2, 1]))
     confidences = bbox[:, 4]  # This are the confidence scores
 
+    # Combining the changes back to one bounding box. The type is tf.float, since the confidence score is a float type
+    # and a tensor can only have one type.
     bbox = tf.stack([v21, v22, v23[:, 0], v23[:, 1], confidences], axis=1)  ###TODO
 
     return bbox
 
 
 def process_pnet_result(pnet_result):
+    """
+    This code originated from MTCNN and represents the function __stage1 in MTCNN.
+    It was ported to TensorFlow 2.x
+
+    It simulates the normal data flow of __stage1 in MTCNN.
+
+    :param total_boxes: All bounding boxes, which were found in an scales loop and
+            survived Non Maximum Suppression(NMS)
+    :return: Bounding boxes, which should mark faces and have a higher score
+            [It would be the result of __stage1]
+    """
+
     total_boxes = tf.reshape(tf.convert_to_tensor(()), (0, 9))
 
     scale_factor = 0.709  # Set like mtcnn __init__ did
@@ -170,9 +199,9 @@ def process_pnet_result(pnet_result):
                                      steps_threshold[0])  # tf.identity should be the counterpart of numpy.copy
 
     # pick = nms(tf.identity(boxes), 0.5, 'Union')  # tf.identity should be the counterpart of numpy.copy
-
     # picktf = tf.cast(pick, dtype=tf.int32)  # I have to use the type tf.int32 and not tf.int16
 
+    ''' TensorFlows NMS is used instead of our NMS '''
     tf_pick = tf.image.non_max_suppression(tf.identity(boxes[:, 0:4]), tf.identity(boxes[:, 4]), 100, iou_threshold=0.5)
 
     if tf.size(boxes) > 0 and tf.size(tf_pick) > 0:
@@ -184,7 +213,7 @@ def process_pnet_result(pnet_result):
     if numboxes > 0:
         # pick = nms(tf.identity(total_boxes), 0.7, 'Union')  # tf.identity should be the counterpart of numpy.copy
         # picktf = tf.cast(pick, dtype=tf.int32)  # I have to use the type tf.int32 and not tf.int16
-        '''I'm using NMS from TensorFlow instead of our NSMS.'''
+        '''TensorFlows NMS is used instead of our NMS'''
         tf_pick = tf.image.non_max_suppression(tf.identity(total_boxes[:, 0:4]), tf.identity(total_boxes[:, 4]), 100,
                                                iou_threshold=0.7)
         total_boxes = tf.gather(total_boxes, indices=tf_pick)
@@ -211,18 +240,34 @@ def process_pnet_result(pnet_result):
     return total_boxes
 
 
-def loss_object(label, predict_box):
-    # MSE loss
-    # loss = tf.math.reduce_mean(tf.math.square(tf.subtract(label, predict_box)))
+def loss_object(predict_box):
+    """
+    Calculates the result of the loss function stated in the paper with the confidence
+    scores from each bounding box.
 
+    :param predict_box: Predicted bounding boxes with their confidence scores
+    :return: Result of the loss function stated in the paper but without applying IoU
+             on the bounding boxes with the ground truths of an image.
+    """
+
+    ''' 
+    In the paper it is not given, if we have to multiply the loss from the paper with -1 to create a SGA in
+    with Keras' SGD optimizer or not. Through testing we found out that the function itself was already doing SGA with 
+    Keras' SGD optimizer.   
+    '''
     # loss = tf.divide(tf.math.reduce_sum(tf.math.log(predict_box)), len(predict_box)) #THIS DOES ASCENT WITH TENSORFLOW DESCENT
     loss = tf.negative(tf.divide(tf.math.reduce_sum(tf.math.log(predict_box)),
-                                 len(predict_box)))  # THIS DOES DESCENT WITH TENSORFLOW DESCENT
-    # print(loss)
+                                 len(predict_box)))  # THIS DOES ASCENT WITH TENSORFLOW DESCENT
     return loss
 
 
 def createPnet():
+    """
+    Sets a PNET taken from MTCNN with the weights from MTCNN
+
+    :return: PNET model with applied weights
+    """
+
     weight_file = 'mtcnn_weights.npy'
     weights = np.load(weight_file, allow_pickle=True).tolist()
     pnet = NetworkFactory().build_pnet()
@@ -234,22 +279,30 @@ pnet_attacked = createPnet()
 
 
 def imageChangeToFitPnet(image, scale):
+    """
+    This code originated from MTCNN and was part of the start of the for scales loop in __stage1.
+    It was ported to TensorFlow 2.x
+    The image is resized. Then, its dimensions are expanded and then transposed.
+
+    :param image: Image to be put into PNET
+    :param scale: Scale factor
+    :return: Image prepared for PNET
+    """
+
     image = tf_scale_image(image, scale)
-    # image = tf.cast(image, dtype=tf.float32)
-    # Normalize image
-    # image = (image - 127.5) * 0.0078125 # using it know before this function
     image = image[tf.newaxis, ...]
     image = tf.transpose(image, (0, 2, 1, 3))
     return image
 
 
-def createLabel(image, scale):
-    image = imageChangeToFitPnet(image, scale)
-    label = pnet_attacked(image)
-    return label[0][0, :, :, :]
-
-
 def tf_IoU(boxA, boxB):
+    """
+    Does Intersection over Union with the two bounding boxes
+
+    :param boxA: Bounding box
+    :param boxB: Bounding box
+    :return: Result of the Intersection over Union from boxA and boxB
+    """
 
     xA = tf.math.maximum(boxA[0], boxB[0])
     yA = tf.math.maximum(boxA[1], boxB[1])
@@ -288,6 +341,16 @@ def tf_IoU(boxA, boxB):
     return iou
 
 def tf_IoU_multiple_boxes(bounding_boxes, ground_truths):
+    """
+    Does Intersection over Union on each bounding box with each ground truth
+    ATTENTION: This function is not used right now.
+
+    :param bounding_boxes: All found bounding boxes in the image found by PNET (Should surround faces)
+    :param ground_truths: Ground truths of the image (True positions of the faces in an image)
+    :return: Tensor array containing bounding boxes with their confidence scores. Each of the bounding boxes
+    had an IoU value of more than 0.6 with one of the ground truths.
+    """
+
     iou_result = []
 
     for bb in bounding_boxes:
@@ -309,12 +372,22 @@ def tf_IoU_multiple_boxes(bounding_boxes, ground_truths):
 
     return tf_iou_result
 
-def create_adversarial_pattern(image, label, ground_truth_boxes, scale):
-    with tf.GradientTape() as tape:
-        # tape.watch(var_patch)
+def create_adversarial_pattern(image, ground_truth_boxes, scale):
+    """
+    Creates an gradient for the patch by executing similar code
+    to the function __stage1 in MTCNN. I.e. it tapes __stage1 from MTCNN and tries to generate a
+    gradient, which will be applied to the patch to worsen the performance of __stage1 and therefore the
+    performance of MTCNN.
 
-        # print("IMAGE:")
-        # print(image)
+    :param image: Image which is used to train the patch
+    :param ground_truth_boxes: Ground truths of the image
+    :param scale: Scale factor with which the image is resized
+    :return: The gradient for the patch and the loss for the image
+    """
+
+    with tf.GradientTape() as tape:
+        tape.watch(var_patch)
+
         adv_image = tf_apply_patch(image, var_patch, ground_truth_boxes)
         if adv_image == None:
             print("ATTENTION PATCH WASN'T ADDED TO THE IMAGE!!!")
@@ -326,8 +399,8 @@ def create_adversarial_pattern(image, label, ground_truth_boxes, scale):
 
         probe = process_pnet_result(pnet_probe)
         '''
-        # Right now I'm trying to implement IoU from our paper into the tape,
-            but I'm only getting a IoU of zero, at the moment. 
+        # Right now,trying to implement IoU from our paper into the tape,
+            results in an IoU of zero, since the bounding boxes do not mark faces. 
         #We need to resize our ground truth boxes, since the image was also resized
         resized_ground_truth_boxes = ground_truth_boxes * scale
 
@@ -339,47 +412,35 @@ def create_adversarial_pattern(image, label, ground_truth_boxes, scale):
             confidence_scores = iou_probe[:, 4]
         '''
         confidence_scores = probe[:, 4]
-        # TODO
-        loss = ascent_or_descent * loss_object(label, confidence_scores)  # label will be needed for the IOU later
+        loss = ascent_or_descent * loss_object(confidence_scores)
 
-        # TO_DO
-        # loss = loss_object(label, process_pnet_result(pnet_attacked(imageChangeToFitPnet(
-        #    tf_apply_patch(image, var_patch, ground_truth_boxes), scale)))[:, 4])
         print("LOSS: ")
         print(loss)
-    # TODO
+
     gradient = tape.gradient(loss, var_patch)
     #print(gradient)
 
     return gradient, loss
 
-#TODO
-def not_negative(x):
-  if x<0:
-    return 0
-  else:
-    return x
 
 def tf_apply_patch(img, patch, ground_truths_of_image):
     """
-    Applies the patch to the image. Please use this Function only in new_detect_faces().
+    Applies the patch to the last face stated in ground_truths_of_image.
+    ATTENTION: This function applies the patch only to the last face in ground truths. The right function is given in
+            test3.py. This function is not changes, since the given test results used this function.
 
     :param img: The original image
-    :param patch: The adversial patch
+    :param patch: The adversarial patch
     :param ground_truths_of_image: Ground truth bounding boxes of the image, i.e. the marked faces
     :return: The original image but with the patch placed, dependet on where the ground truths are given
     """
-    # adv_img = copy.deepcopy(img)
-    # tf_adv_img = tf.cast(img, dtype=tf.float32)
 
     alpha = 0.5
-    #TODO
     tf_adv_img = None
 
     # draw detected face + plaster patch over source
     for bounding_box in ground_truths_of_image:  # ground truth loop
 
-        # TODO
         resize_value = alpha * tf.math.sqrt(bounding_box[2] * bounding_box[3])
         tf_resized_P = tf.image.resize(patch, (resize_value, resize_value), method='lanczos5', antialias=True)
 
@@ -409,63 +470,72 @@ def tf_apply_patch(img, patch, ground_truths_of_image):
     return tf_adv_img
 
 
-'''Instead of this method getRGB is used right now'''
-def getPerturbationRGB(image, imageWithPerturbations):
-    temp = tf.squeeze(imageWithPerturbations)
-    temp = temp / 0.0078125 + 127.5
-    temp = tf.transpose(temp, (1, 0, 2))
-    temp = cv2.resize(temp.numpy(), (image.shape[1], image.shape[0]))
-
-    return temp  # * mask
-
-
 def getRGB(image):
+    """
+    Converts the image back to the RGB format
+
+    :param image: Normalised image
+    :return: The image in the RGB format
+    """
+
     temp = image / 0.0078125 + 127.5
     return temp
 
 
-def iterative_attack(target_image, label, ground_truth_boxes, scale, learning_rate,
-                     scaleNum):  # CHANGED: Removed GRAYSCALE
+def iterative_attack(target_image, ground_truth_boxes, scale):
 
-    upperBound = (255 - 127.5) * 0.0078125  # ~ +1
-    lowerBound = (0 - 127.5) * 0.0078125  # ~ -1
+    """
+    Creates an adversarial patch by executing similar code to the functions detect_faces and __stage1 in MTCNN. It tapes
+    the execution of __stage1 to create a gradient, which it applies
 
-    # print("_____")
-    # print("Epoch %d", epoch)
+    :param target_image: Image being used to train the patch
+    :param ground_truth_boxes: Ground truth boxes from the image
+    :param scale: Scale factor with which the image will be resized
+    :return: Image on which the patch was placed
+    """
 
-    '''
-    #Don't need this right now.
-    tf.dtypes.cast(adv_image, tf.int32)
-    tf.dtypes.cast(adv_image, tf.float32)
-    '''
+    upper_bound = (255 - 127.5) * 0.0078125  # ~ +1
+    lower_bound = (0 - 127.5) * 0.0078125  # ~ -1
 
-    gradient, loss = create_adversarial_pattern(target_image, label, ground_truth_boxes, scale)
+    gradient, loss = create_adversarial_pattern(target_image, ground_truth_boxes, scale)
 
-    # print("GRADIENT:")
-    # print(gradient)
     # TODO (sometimes gradient is NONE)
-    if (gradient != None):
+    if gradient is not None:
+        # Applies the gradient to the patch
         opt.apply_gradients(zip([gradient], [var_patch]))
-        var_patch.assign(tf.clip_by_value(var_patch, lowerBound, upperBound))
+        # Bound the values of the patch to be between -1 and 1
+        var_patch.assign(tf.clip_by_value(var_patch, lower_bound, upper_bound))
     else:
         print("GRADIENT NONE")
 
+    # Applies the new patch on the image to output the image
     adv_image = tf_apply_patch(target_image, var_patch, ground_truth_boxes)
-    clipped_adv_image = tf.clip_by_value(adv_image, lowerBound, upperBound)
+    # Bound the values of the image to be between -1 and 1
+    clipped_adv_image = tf.clip_by_value(adv_image, lower_bound, upper_bound)
 
     return clipped_adv_image
 
 
 def picture_images(learning_rate):
+    """
+    This function uses the images from picture (which were taken from
+    https://github.com/yahi61006/adversarial-attack-on-mtcnn) to train the adversarial patch. And returns
+    the patch as well as the images on which the patch was applied as images.
 
-    storePatch = getRGB(var_patch).numpy()
+    :param learning_rate: The learning rate for the Keras SGD optimizer
+    """
 
-    storePatch = storePatch.astype(np.int32)
-    storePatch = storePatch.astype(np.float32)
+    store_patch = getRGB(var_patch).numpy()
+
+    store_patch = store_patch.astype(np.int32)
+    store_patch = store_patch.astype(np.float32)
 
     cv2.imwrite(
-        'result/patch/rgb/mouth/normal/Patch/' + '_INIT' + '_' + patch_name + '_LR= ' + str(learning_rate) + '.jpg'
-        , storePatch[:, :, [2, 1, 0]])
+        'result/rgb/normal/Patch/' + '_INIT' + '_' + patch_name + '_LR= ' + str(learning_rate) + '.jpg'
+        , store_patch[:, :, [2, 1, 0]])
+
+    # Going in each epoch through each image in each distance folder in pictures.
+    # All images train the same adversarial patch
     for epoch in range(61):
         # One meter to five meter
         for distance in range(1, 6):
@@ -507,23 +577,19 @@ def picture_images(learning_rate):
                 print("*****")
                 print("Epoch:", epoch, "of Picture:", pic_name, "of Directory", str(distance) + "M")
                 # Pick three scale to train for each distance
-                for scaleNum in range(1):  # CHANGED 3 -> 1
+                for scaleNum in range(1):  # Only using one scale right now
                     # print('start', " Scalenum: ", scaleNum)
-                    #TODO
-                    #opt = tf.keras.optimizers.SGD(learning_rate=learning_rate)  # learning_rate[scaleNum])
                     which_scale = scaleStartIndex[distance - 1] + scaleNum
 
                     scale = scales[which_scale]
-
-                    label = createLabel(image, scale)
 
                     '''
                     Preparing the image before the tape.
                     '''
                     normalized_image = (image - 127.5) * 0.0078125  # NORMALIZING the image used
 
-                    attacked_image = iterative_attack(normalized_image, label, bounding_boxes, scale,
-                                                      learning_rate, scaleNum)
+                    attacked_image = iterative_attack(normalized_image, bounding_boxes, scale)
+
             if epoch % 10 == 0:
                 image3 = attacked_image
                 image3 = getRGB(image3).numpy()
@@ -532,10 +598,10 @@ def picture_images(learning_rate):
 
                 results = detector.detect_faces(image3)
 
-                storePatch = getRGB(var_patch).numpy()
+                store_patch = getRGB(var_patch).numpy()
 
-                storePatch = storePatch.astype(np.int32)
-                storePatch = storePatch.astype(np.float32)
+                store_patch = store_patch.astype(np.int32)
+                store_patch = store_patch.astype(np.float32)
 
                 plt.figure(figsize=(image3.shape[1] * 6 // image3.shape[0], 6))
                 plt.imshow(image3 / 255)
@@ -559,14 +625,15 @@ def picture_images(learning_rate):
 
                 iou = round(len(iou_mat[np.where(iou_mat == 2)]) / len(iou_mat[np.where(iou_mat > 0)]), 2)
 
+                # Outputs the last image being processed in the distance folder
                 plt.savefig(
-                    'result/image/rgb/mouth/normal/{}M/'.format(
+                    'result/rgb/normal/{}M/'.format(
                         distance) + aod + '_NEW' + '_' + patch_name + '_' + pic_name + '_iou=' + str(
                         iou) + '_' + str(epoch) + '_LR= ' + str(learning_rate) + '.jpg')
 
                 cv2.imwrite(
-                    'result/patch/rgb/mouth/normal/Patch/' + aod + '_NEW' + '_' + patch_name + '_' + pic_name
-                    + '_' + str(epoch) + '_LR= ' + str(learning_rate) + '.jpg', storePatch[:, :, [2, 1, 0]])
+                    'result/rgb/normal/Patch/' + aod + '_NEW' + '_' + patch_name + '_' + pic_name
+                    + '_' + str(epoch) + '_LR= ' + str(learning_rate) + '.jpg', store_patch[:, :, [2, 1, 0]])
 
         if epoch == 60:
             learning_rate = learning_rate * 0.1
@@ -575,17 +642,24 @@ def picture_images(learning_rate):
 
 
 def face_Control_all(learning_rate):
-    storePatch = getRGB(var_patch).numpy()
+    """
+    This function uses all the images from Face_Control (which were taken from the WIDER-FACES dataset)
+    to train the adversarial patch. It outputs the adversarial patch into Face_Control/results/patches.
 
-    storePatch = storePatch.astype(np.int32)
-    storePatch = storePatch.astype(np.float32)
+    :param learning_rate: The learning rate for the Keras SGD optimizer
+    """
+
+    store_patch = getRGB(var_patch).numpy()
+
+    store_patch = store_patch.astype(np.int32)
+    store_patch = store_patch.astype(np.float32)
 
     cv2.imwrite(
-        './Face_Control/results/patches/' + aod + '_INIT' + patch_name + '_LR= ' + str(learning_rate) + '.jpg', storePatch[:, :, [2, 1, 0]])
+        './Face_Control/results/patches/' + aod + '_INIT' + patch_name + '_LR= ' + str(learning_rate) + '.jpg', store_patch[:, :, [2, 1, 0]])
 
     for epoch in range(21):
         # One meter to five meter (only 1 meter)
-        for distance in range(1, 2):  # CHANGED
+        for distance in range(1, 2):
             pictureList = os.listdir('./Face_Control/0--Parade')
             true_box_info = np.load('./Face_Control/0--Parade/info_me.npy', allow_pickle=True)
             pn = 0  # picture count(how many images already passed)
@@ -594,9 +668,8 @@ def face_Control_all(learning_rate):
                 pn += 1
 
                 pic_name = pic.split('.')[0]
-                if pic_name == 'info_me':  # CHANGED
+                if pic_name == 'info_me':
                     break
-                # which_pic = int(pic_name[0]) - 1
 
                 image = tf.keras.preprocessing.image.load_img('./Face_Control/0--Parade/' + pic)
                 image = tf.keras.preprocessing.image.img_to_array(image)
@@ -607,8 +680,7 @@ def face_Control_all(learning_rate):
                 if len(result) == 1:  # With this bounding_boxes is always 2 dimensional
                     bounding_boxes = np.array([result[0]['box']])
                 else:
-                    bounding_boxes = np.empty((0, 4), int)  # CHANGE I'm not sure if using np.empty is safe
-
+                    bounding_boxes = np.empty((0, 4), int)
                     for j in range(len(result)):
                         bounding_boxes = np.append(bounding_boxes, np.array([result[j]['box']]), axis=0)
 
@@ -623,73 +695,31 @@ def face_Control_all(learning_rate):
                 scaleStartIndex = [5, 4, 2, 1, 0]
 
                 print("*****")
-                print("Epoch: ", epoch, "of Picture:", pic_name, "Image_NR:",
-                      pn)  # , "of Directory", str(distance) + "M")
-                # Pick three scale to train for each distance
-                for scaleNum in range(1):  # CHANGED 3 -> 1
-                    # print('start', " Scalenum: ", scaleNum)
-                    #TODO
-                    #opt = tf.keras.optimizers.SGD(learning_rate=learning_rate)  # learning_rate[scaleNum])
+                print("Epoch: ", epoch, "of Picture:", pic_name, "Image_NR:", pn)
+
+                for scaleNum in range(1):  # Only using one scale right now
                     which_scale = scaleStartIndex[distance - 1] + scaleNum
 
                     scale = scales[which_scale]
-
-                    label = createLabel(image, scale)
 
                     '''
                     Preparing the image before the tape.
                     '''
                     normalized_image = (image - 127.5) * 0.0078125  # NORMALIZING the image used
 
-                    attacked_image = iterative_attack(normalized_image, label, bounding_boxes, scale,
-                                                      learning_rate, scaleNum)
+                    attacked_image = iterative_attack(normalized_image, bounding_boxes, scale)
+
+            # Output the patch every 10 epochs
             if epoch % 10 == 0:
-                '''
-                image3 = attacked_image
-                image3 = getRGB(image3).numpy()
-                image3 = image3.astype(np.int32)
-                image3 = image3.astype(np.float32)
 
-                results = detector.detect_faces(image3)
-                '''
-                storePatch = getRGB(var_patch).numpy()
+                store_patch = getRGB(var_patch).numpy()
 
-                storePatch = storePatch.astype(np.int32)
-                storePatch = storePatch.astype(np.float32)
-
-                # TODO
-                '''
-                plt.figure(figsize=(image3.shape[1] * 6 // image3.shape[0], 6))
-                plt.imshow(image3 / 255)
-                plt.axis(False)
-                ax = plt.gca()
-
-
-                # Count iou
-                iou_mat = np.zeros((image.shape[0], image.shape[1]))
-                t_x1, t_y1, t_x2, t_y2 = true_box_info[which_pic]['box']
-                iou_mat[t_y1:t_y2, t_x1:t_x2] += 1
-
-                for b in results:
-                    x1, y1, width, height = b['box']
-                    x1, y1 = abs(x1), abs(y1)
-                    x2, y2 = x1 + width, y1 + height
-                    if b == results[0]:
-                        iou_mat[y1:y2, x1:x2] += 1
-
-                    plt.text(x1, y1, '{:.2f}'.format(b['confidence']), color='red')
-                    ax.add_patch(mpatches.Rectangle((x1, y1), width, height, ec='red', alpha=1, fill=None))
-
-                iou = round(len(iou_mat[np.where(iou_mat == 2)]) / len(iou_mat[np.where(iou_mat > 0)]), 2)
-
-                plt.savefig(
-                    './Face_Control/results/images' + aod + '_NEW' + '_' + patch_name + '_' + pic_name + '_iou=' + str(
-                        iou) + '_' + str(i) + '_LR= ' + str(learning_rate) + '.jpg')
-                '''
+                store_patch = store_patch.astype(np.int32)
+                store_patch = store_patch.astype(np.float32)
 
                 cv2.imwrite(
                     './Face_Control/results/patches/' + aod + '_NEW' + '_' + patch_name
-                    + '_' + str(epoch) + '_LR= ' + str(learning_rate) + '.jpg', storePatch[:, :, [2, 1, 0]])
+                    + '_' + str(epoch) + '_LR= ' + str(learning_rate) + '.jpg', store_patch[:, :, [2, 1, 0]])
 
         if epoch == 60:
             learning_rate = learning_rate * 0.1
@@ -698,15 +728,23 @@ def face_Control_all(learning_rate):
 
 
 def face_control_variable(learning_rate):
-    # For now, we need to load the names of the images and their ground truths only ones, sinc at the momente we only use one directory
+    """
+    This function uses the images from Face_Control (which were taken from the WIDER-FACES dataset)
+    to train the adversarial patch. It outputs the adversarial patch into Face_Control/results/patches.
+
+    :param learning_rate: The learning rate for the Keras SGD optimizer
+    """
+
+    # For now, we need to load the names of the images and their ground truths only ones,
+    # since we only use one directory
     img_folder = './Face_Control'
     labels = open(img_folder + "/" + "wider_face_train_bbx_gt.txt", "r")
     pictureList = []  # names of the images
     ground_truths = {}  # dictionary of ground truths
     pCount = 0  # how many images we are using
     while labels:
-        #TODO pCount througths an error if pCount = 66
-        if pCount == 65:  # number of images being processed
+        # number of images being processed
+        if pCount == 65:  # An error is thrown if pCount = 66
             break
 
         pCount += 1
@@ -724,17 +762,17 @@ def face_control_variable(learning_rate):
             ground_truths[img_name].append([int(value) for value in labels.readline().rstrip("\n").split()][
                                            0:4])  # take only first 4 values for box size
 
-    storePatch = getRGB(var_patch).numpy()
+    '''Creating a file for the generated patch'''
+    store_patch = getRGB(var_patch).numpy()
 
-    storePatch = storePatch.astype(np.int32)
-    storePatch = storePatch.astype(np.float32)
+    store_patch = store_patch.astype(np.int32)
+    store_patch = store_patch.astype(np.float32)
 
     cv2.imwrite(
         './Face_Control/results/patches/' + aod + '_' + patch_name + '_INIT' + '_LR= ' + str(learning_rate)
-        + '_PCount=' + str(pCount) + '.jpg', storePatch[:, :, [2, 1, 0]])
+        + '_PCount=' + str(pCount) + '.jpg', store_patch[:, :, [2, 1, 0]])
 
     for epoch in range(121):
-        # One meter to five meter (only 1 meter)
         for distance in range(1, 2):  # For now, this stands how it is, since later we want to use multiple directories
 
             pn = 0
@@ -757,73 +795,31 @@ def face_control_variable(learning_rate):
                 scaleStartIndex = [5, 4, 2, 1, 0]
 
                 print("*****")
-                print("Epoch:", epoch, "of Picture:", pic_name, "Image_NR:",
-                      pn)  # , "of Directory", str(distance) + "M")
+                print("Epoch:", epoch, "of Picture:", pic_name, "Image_NR:", pn)
                 # Pick three scale to train for each distance
-                for scaleNum in range(1):  # CHANGED 3 -> 1
+                for scaleNum in range(1):  # Only using one scale right now
                     # print('start', " Scalenum: ", scaleNum)
-                    #TODO
-                    #opt = tf.keras.optimizers.SGD(learning_rate=learning_rate)  # learning_rate[scaleNum])
                     which_scale = scaleStartIndex[distance - 1] + scaleNum
 
                     scale = scales[which_scale]
-
-                    label = createLabel(image, scale)
 
                     '''
                     Preparing the image before the tape.
                     '''
                     normalized_image = (image - 127.5) * 0.0078125  # NORMALIZING the image used
 
-                    attacked_image = iterative_attack(normalized_image, label, ground_truths_of_pic, scale,
-                                                      learning_rate, scaleNum)
+                    attacked_image = iterative_attack(normalized_image, ground_truths_of_pic, scale)
             if epoch % 10 == 0:
-                '''
-                image3 = attacked_image
-                image3 = getRGB(image3).numpy()
-                image3 = image3.astype(np.int32)
-                image3 = image3.astype(np.float32)
 
-                results = detector.detect_faces(image3)
-                '''
-                storePatch = getRGB(var_patch).numpy()
+                store_patch = getRGB(var_patch).numpy()
 
-                storePatch = storePatch.astype(np.int32)
-                storePatch = storePatch.astype(np.float32)
+                store_patch = store_patch.astype(np.int32)
+                store_patch = store_patch.astype(np.float32)
 
-                # TODO
-                '''
-                plt.figure(figsize=(image3.shape[1] * 6 // image3.shape[0], 6))
-                plt.imshow(image3 / 255)
-                plt.axis(False)
-                ax = plt.gca()
-
-
-                # Count iou
-                iou_mat = np.zeros((image.shape[0], image.shape[1]))
-                t_x1, t_y1, t_x2, t_y2 = true_box_info[which_pic]['box']
-                iou_mat[t_y1:t_y2, t_x1:t_x2] += 1
-
-                for b in results:
-                    x1, y1, width, height = b['box']
-                    x1, y1 = abs(x1), abs(y1)
-                    x2, y2 = x1 + width, y1 + height
-                    if b == results[0]:
-                        iou_mat[y1:y2, x1:x2] += 1
-
-                    plt.text(x1, y1, '{:.2f}'.format(b['confidence']), color='red')
-                    ax.add_patch(mpatches.Rectangle((x1, y1), width, height, ec='red', alpha=1, fill=None))
-
-                iou = round(len(iou_mat[np.where(iou_mat == 2)]) / len(iou_mat[np.where(iou_mat > 0)]), 2)
-
-                plt.savefig(
-                    './Face_Control/results/images' + aod + '_NEW' + '_' + patch_name + '_' + pic_name + '_iou=' + str(
-                        iou) + '_' + str(i) + '_LR= ' + str(learning_rate) + '.jpg')
-                '''
 
                 cv2.imwrite(
                     './Face_Control/results/patches/' + aod + '_NEW' + '_' + patch_name + '_' + str(i)
-                    + '_LR= ' + str(learning_rate) + '_PCount=' + str(pCount) + '.jpg', storePatch[:, :, [2, 1, 0]])
+                    + '_LR= ' + str(learning_rate) + '_PCount=' + str(pCount) + '.jpg', store_patch[:, :, [2, 1, 0]])
 
         if epoch == 60:
             learning_rate = learning_rate * 0.1
@@ -831,14 +827,16 @@ def face_control_variable(learning_rate):
             learning_rate = learning_rate * 0.1
 
 
-# TODO
-ascent_or_descent = 1  # -1 = ascent and +1 = descent [I think]
+# -1 = descent and +1 = ascent. This was added since we weren't sure what would be stochastic gradient ascent
+ascent_or_descent = 1
 if ascent_or_descent == 1:
-    aod = 'DESCENT'
-elif ascent_or_descent == -1:
     aod = 'ASCENT'
+elif ascent_or_descent == -1:
+    aod = 'DESCENT'
 
+# Loads the patches in patch_img into allFileList
 allFileList = os.listdir('./patch_img')
+# Attacking each patch separately
 for file in allFileList:
     '''
     # ATTENTION THE PATCH IMAGES AREN'T USED RIGHT KNOW
@@ -858,12 +856,11 @@ for file in allFileList:
     patch = (patch - 127.5) * 0.0078125  # NORMALIZING of the patch
     var_patch = tf.Variable(patch, dtype=tf.float32)  # RANDOM PATCH to TF VARIABLE
 
-    # TODO
-    # Learning rate for having for each scale factore one special learning rate
-    learning_rate = np.array([1, 1, 1])  # [1.0, 1.0, 1.0]
-    # Use lr for testing
     lr = 100  # learning rate/ amplification rate used right know
-    opt = tf.keras.optimizers.SGD(learning_rate=lr)  # learning_rate[scaleNum])
+    opt = tf.keras.optimizers.SGD(learning_rate=lr)
+    '''
+    Functions for different image dataset to train the patch
+    '''
     #picture_images(lr)
     #face_Control_all(lr)
     face_control_variable(lr)
