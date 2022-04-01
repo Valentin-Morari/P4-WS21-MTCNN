@@ -102,8 +102,11 @@ def output_images(ASes_output, originals, patch_results_folder, prefix = ""):
           shutil.rmtree(img_folder + "/" + results_folder + "/" + patch_results_folder)
     os.makedirs(img_folder + "/" + results_folder + "/" + patch_results_folder)
         
+    face_nr = 0
+    total_image_nr = 0    
+    bboxes = ""
     for image_nr in range(len(working_images)):  # loop through all
-
+        
         ground_truth_boxes = ground_truths[image_names[image_nr]]
 
         for ground_truth_bounding_box in ground_truth_boxes:  # ground truth loop
@@ -117,7 +120,11 @@ def output_images(ASes_output, originals, patch_results_folder, prefix = ""):
             
             #pass #gas
         #print(ASes_output)
+        if len(ASes_output[image_nr]['AS']):
+          total_image_nr += 1
+          
         for AS_of_one_image in ASes_output[image_nr]['AS']:
+            face_nr += 1
             bounding_box = AS_of_one_image['anchor']  # guess loop
             confidence_score = AS_of_one_image['confidence_score'].numpy() # extract confidence score of detected bounding box
 
@@ -126,6 +133,7 @@ def output_images(ASes_output, originals, patch_results_folder, prefix = ""):
 
             # Makes the bounding box visible
             print(image_names[image_nr] + " has", bounding_box)
+            bboxes += str(image_names[image_nr] + " has") + str(bounding_box) + "\n"
             cv2.rectangle(working_images[image_nr],
                           (bounding_box[0], bounding_box[1]),
                           (bounding_box[0] + bounding_box[2], bounding_box[1] + bounding_box[3]),
@@ -140,6 +148,10 @@ def output_images(ASes_output, originals, patch_results_folder, prefix = ""):
         cv2.imwrite(img_folder + "/" + results_folder + "/" + patch_results_folder + "/" + "_out_" + prefix + image_names[image_nr],
                     cv2.cvtColor(working_images[image_nr], cv2.COLOR_RGB2BGR))
         prefix = ""
+    
+    with open(img_folder + "/" + results_folder + "/" + patch_results_folder + "/" + str(face_nr) + "_faces_in_" + str(total_image_nr) + "_images.txt", "x") as f: #what
+      f.write(bboxes)
+       
 
 
 def apply_patch(originals, patch):
