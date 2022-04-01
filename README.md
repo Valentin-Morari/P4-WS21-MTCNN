@@ -45,6 +45,7 @@ PATCH TRAINING:
     - various cv2.imwrite functions -> used for saving the images with the patches applied and the patches themselves to the hard drive
 
   Check the Face_Control/1kImgResults folder for execution results. 
+  
   Legend: Blue box - detected face, with a confidence score above it, and green - ground truth bounding box.
 
 ### How to test 
@@ -56,6 +57,7 @@ PATCH TESTING:
   2. make sure there's an appropriate ground truth label file in the Test_Faces directory (loading images for testing is done using this file)
   3. python3.8 face_test.py
   4. test results will be placed in the Test_Faces/test_results folder, into a newly created folder based on the name of your patch(es)
+
 
   
     
