@@ -6,6 +6,8 @@ This project generates adversarial patches against MTCNN's ONET and converts MTC
 [MTCNN implementation](https://github.com/ipazc/mtcnn) by Iván de Paz Centeno. Patch generation based on "[Design and 
 Interpretation of Universal Adversarial Patches in Face Detection](https://arxiv.org/abs/1912.05021)” released in 2020 by Yang, Xiao, Wei, Fangyun, Zhang, Hongyang, and Zhu, Jun.
 
+Supported by Python3.4+, tensorflow2.7+. 
+
 ![_out_0 890586359_peopledrivingcar_peopledrivingcar_59_144](https://user-images.githubusercontent.com/35852035/161250277-c0aa3d4a-c017-4d22-ab0b-801693956343.jpg)
 
 _Legend: Blue box - detected face, with a confidence score above it, and green - ground truth bounding box._
