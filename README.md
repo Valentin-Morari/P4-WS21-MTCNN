@@ -1,5 +1,7 @@
 # P4-WS21-MTCNN
 
+## Attacking Face Detection with Adversarial Patches
+
 ![_out_0 890586359_peopledrivingcar_peopledrivingcar_59_144](https://user-images.githubusercontent.com/35852035/161250277-c0aa3d4a-c017-4d22-ab0b-801693956343.jpg)
 
 
@@ -13,7 +15,7 @@ For the O-MTCNN attack, the main file to be modified is mtcnn.py in the folder m
 
 Alternatively, a pre-made venv environment is provided. Activate using source bin/activate and then run using python3 test.py
 
-___
+### Project set-up
 
 To run our project from scratch (no conda):
     1. git clone https://github.com/Valentin-Morari/P4-WS21-MTCNN
@@ -25,7 +27,7 @@ To run our project from scratch (no conda):
     4. cd P4-WS21-MTCNN (our project's name)
     5. pip3.8 install -r reqs.txt
   
-  ___
+### How to train 
   
 PATCH TRAINING:
   python3.8 test.py
@@ -42,7 +44,7 @@ PATCH TRAINING:
   Check the Face_Control/1kImgResults folder for execution results. 
   Legend: Blue box - detected face, with a confidence score above it, and green - ground truth bounding box.
 
-  ___
+### How to test 
   
 PATCH TESTING:
   1. place the 0--Parade, 2--Demonstration and 13--Interview (or whatever image testing datasets you want) into the folder Test_Faces.
