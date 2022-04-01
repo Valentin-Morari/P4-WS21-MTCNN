@@ -10,7 +10,7 @@ Uses Python3.8 and Tensorflow2.7.
 
 ![_out_0 890586359_peopledrivingcar_peopledrivingcar_59_144](https://user-images.githubusercontent.com/35852035/161250277-c0aa3d4a-c017-4d22-ab0b-801693956343.jpg)
 
-_Legend: Blue box - detected face, with a confidence score above it, and green - ground truth bounding box for the face, ideal result._
+_Legend: Blue box - detected face, with a confidence score above it, and green - ground truth bounding box for the face, ideal result. Image courtesy of WIDERFACE, with our project's results applied._
 
 Clone the environment using conda by running: conda env create -f environment.yml in the base folder containing environment.yml
 
