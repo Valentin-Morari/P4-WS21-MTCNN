@@ -4,10 +4,7 @@ import tensorflow as tf
 import cv2
 from mtcnn import MTCNN
 import numpy as np
-import math
-import copy
 import os
-#import psutil
 
 
 # detector = MTCNN()
@@ -128,22 +125,19 @@ def new_run(patch_used, original_images, amplification_factor: int):
     image_count = 0
     detector = MTCNN()
     for i in range(len(original_images)):
-        #process = psutil.Process(os.getpid())
-        #print("IN TOTAL", process.memory_info().rss / 1000000, "MB")
 
-        # print(tmp_patch,tf.math.scalar_mul(0.5, tmp_patch))
+        print(i, "", image_names[i])
 
-        print(image_count, "_", image_names[i])
+        try: #handles exotic errors (often related to extreme bounding box sizes) by skipping over images that produce them
+            _, _, new_patch = detector.new_detect_faces(original_images[i], tmp_patch, ground_truths[image_names[i]], amplification_factor) #detect>
 
-        _, _, new_patch = detector.new_detect_faces(original_images[i], tmp_patch, ground_truths[image_names[i]],
-                                                    amplification_factor)
+            tmp_patch = new_patch #store new patch in the temporary variable
+
+        except Exception as e: #if exception is met store empty result and image without patch applied to it
+            print("Image", i, " (skipping) has the following error:", e)
 
         image_count += 1
-
-        # print(orig-patch_used)
-        tmp_patch = new_patch
-
-        # Restarting MTCNN every 8 images, to save memory. 10 already rises up to 8GB sometimes.
+        # Restarting MTCNN every 1 images, to save memory.
         if image_count % 1 == 0:
             detector = MTCNN()
             gc.collect()
@@ -159,7 +153,7 @@ old_patch = tf.cast(init_patch, dtype=tf.float32)
 
 amplification_factor = 1000
 
-cv2.imwrite(img_folder + "/Test_Kong" + "/" + "_out_" + "INIT_" + "AmpF=" + str(amplification_factor) + "_IMG_COUNT=" + str(img_count)
+cv2.imwrite(img_folder + "/" + "_out_" + "INIT_" + "AmpF=" + str(amplification_factor) + "_IMG_COUNT=" + str(img_count)
             + "_Adversarial_Patch.jpg", cv2.cvtColor(init_patch, cv2.COLOR_RGB2BGR))
 
 for epoch in range(121):
@@ -171,7 +165,7 @@ for epoch in range(121):
 
         np_patch_out = new_patch.numpy()
         np_patch_out = np.fix(np_patch_out)
-        cv2.imwrite(img_folder + "/Test_Kong" + "/" + "_out_" + str(epoch) + "_AmpF=" + str(amplification_factor) + "_IMG_COUNT="
+        cv2.imwrite(img_folder + "/" + "_out_" + str(epoch) + "_AmpF=" + str(amplification_factor) + "_IMG_COUNT="
                     + str(img_count) + "_Adversarial_Patch.jpg", cv2.cvtColor(np_patch_out, cv2.COLOR_RGB2BGR))
 
     if epoch == 60:
