@@ -46,13 +46,14 @@ PATCH TRAINING:
   
     - img_folder (Face_Control) -> stores images to use for training the adversarial patch generation
     - labels (wider_face_train_bbx_gt.txt) -> retrieve ground truths of the bounding boxes for the faces useed during training
-    - init_patch -> which image to initialize from (random, or specify a starting image)
-    - amplification factor -> gradient amplification power to offset smaller training image set or smaller number of epochs
+    - init_patch -> which image (the adversarial patch) to initialize from (random, or specify a starting image)
+    - amplification factor -> gradient amplification power to offset smaller training image set or smaller number of epochs 
+                              or a bigger patch
     - various cv2.imwrite functions -> used for saving the images with the patches applied and the patches themselves to the hard drive
 
   Check the Face_Control/1kImgResults folder for execution results. 
   
-  Legend: Blue box - detected face, with a confidence score above it, and green - ground truth bounding box.
+  Legend: Blue box - detected face, with its confidence score above it, and green - ground truth bounding box.
 
 ### How to test 
   
