@@ -151,7 +151,7 @@ init_patch = np.random.randint(255, size=(128, 128, 3),
 
 old_patch = tf.cast(init_patch, dtype=tf.float32)
 
-amplification_factor = 1000
+amplification_factor = 1000000
 
 cv2.imwrite(img_folder + "/" + "_out_" + "INIT_" + "AmpF=" + str(amplification_factor) + "_IMG_COUNT=" + str(img_count)
             + "_Adversarial_Patch.jpg", cv2.cvtColor(init_patch, cv2.COLOR_RGB2BGR))
