@@ -14,10 +14,6 @@ img_folder = "Test_Faces"
 patch_folder = "to_test"
 results_folder = "test_results"
 
-# global AS
-# AS = []
-# Only saves ground_truth bounding boxes given by the detector since they already positive samples and therefore satisfy IoU(Ai,Bi) where Ai stands for anchor and Bi stands for ground-truth bounding box.
-# Each entry represents one bounding box
 images = []
 image_names = []
 ground_truths = {}
@@ -37,8 +33,6 @@ ASes = [ # list of images with their ASes
          }
         ]
 """
-
-#ASes = []
 
 labels = open(img_folder + "/" + "labels.txt", "r")
 
@@ -128,9 +122,6 @@ def output_images(ASes_output, originals, patch_results_folder, prefix = ""):
             bounding_box = AS_of_one_image['anchor']  # guess loop
             confidence_score = AS_of_one_image['confidence_score'].numpy() # extract confidence score of detected bounding box
 
-            # print(bounding_box)
-            # print(ASes_output[image_nr]['AS'])
-
             # Makes the bounding box visible
             print(image_names[image_nr] + " has", bounding_box)
             bboxes += str(image_names[image_nr] + " has") + str(bounding_box) + "\n"
@@ -185,71 +176,15 @@ def apply_patch(originals, patch):
 
     return working_images
 
-
-def run(patch_used, edited_images):
-    # global AS  # AS is broken
-    # select for AS based on IoU > 0.6
-    # AS = []
-    # Detects faces
-    result = [detector.detect_faces(edited_images[i]) for i in range(len(edited_images))]
-
-    ASes = []  # Reset Adversarial Samples when re-running the algorithm
-
-    # Extracts the bounding boxes from the detected faces
-    for image_nr in range(len(edited_images)):
-
-        AS = []
-
-        i = 0  # used for pairing items in AS
-
-        # ground_truth_boxes = ground_truths[image_names[image_nr]]
-
-        faces = result[image_nr]
-        # draw detected face + plaster patch over source
-        for j in range(len(faces)):
-            bounding_box = faces[j]['box']
-            # print("BOUND: ")
-            # print(bounding_box)
-            confidence_score = faces[j]['confidence']
-
-            for ground_truth_bounding_box in ground_truths[
-                image_names[image_nr]]:  # check each possible ground truth box, instead of assuming they're ordered
-                if (IoU(bounding_box, ground_truth_bounding_box) > lambda_IoU):
-                    AS.append({'anchor': bounding_box, 'ground_truth_bounding_box': ground_truth_bounding_box,
-                               'confidence_score': confidence_score, 'patch': patch_used})
-
-            # print("GROUND: ")
-            # print(ground_truth_bounding_box)
-
-            # print("AS: ")
-            # print(AS)
-
-        ASes.append({'ground_truth_image': images[image_nr], 'AS': AS})
-        # print(ASes)
-
-    # AS = [ASi for ASi in AS if IoU(ASi[0], ASi[1]) > lambda_IoU]
-    return ASes
-
 def new_run(patch_used, original_images):
-    # global AS  # AS is broken
-    # select for AS based on IoU > 0.6
-    # AS = []
-    # Detects faces
-    #result, adv_img = [detector.new_detect_faces(original_images[i], patch_used, ground_truths[image_names[i]]) for i in range(len(original_images))]
     result = []
     adv_img = []
     tmp_patch = patch_used
     for i in range(len(original_images)):
-        
-        #print(tmp_patch,tf.math.scalar_mul(0.5, tmp_patch))
         tmp_result, tmp_adv_img, new_patch = detector.new_detect_faces(original_images[i], tmp_patch, ground_truths[image_names[i]], 0)
-        #print(orig-patch_used)
         tmp_patch = new_patch
         result.append(tmp_result)
         adv_img.append(tmp_adv_img)
-    
-    #print("RESULT:")
-    #print(result)
     ASes = []  # Reset Adversarial Samples when re-running the algorithm
 
     # Extracts the bounding boxes from the detected faces
@@ -259,16 +194,9 @@ def new_run(patch_used, original_images):
 
         i = 0  # used for pairing items in AS
 
-        # ground_truth_boxes = ground_truths[image_names[image_nr]]
-
         faces = result[image_nr]
-        #print(image_nr)
-        #print(faces)
-        # draw detected face + plaster patch over source
         for j in range(len(faces)):
             bounding_box = faces[j]['box']
-            # print("BOUND: ")
-            # print(bounding_box)
             confidence_score = faces[j]['confidence']
 
             for ground_truth_bounding_box in ground_truths[
@@ -277,16 +205,7 @@ def new_run(patch_used, original_images):
                     AS.append({'anchor': bounding_box, 'ground_truth_bounding_box': ground_truth_bounding_box,
                                'confidence_score': confidence_score, 'patch': patch_used})
 
-            # print("GROUND: ")
-            # print(ground_truth_bounding_box)
-
-            # print("AS: ")
-            # print(AS)
-
         ASes.append({'ground_truth_image': images[image_nr], 'AS': AS})
-        # print(ASes)
-
-    # AS = [ASi for ASi in AS if IoU(ASi[0], ASi[1]) > lambda_IoU]
     return ASes, adv_img, tmp_patch
 
 for patch_name in os.listdir(img_folder + "/" + patch_folder):
@@ -296,15 +215,6 @@ for patch_name in os.listdir(img_folder + "/" + patch_folder):
 
   for i in range(1):
     bbox, adv_img, new_patch = new_run(old_patch, images)
-    #print(tf.cast(new_patch, dtype=tf.float32)-old_patch)
-    """
-    if i ==0:
-      output_images(bbox, adv_img, "first")
-    elif i == 49:
-      output_images(bbox, adv_img, "last")
-    else:
-      output_images(bbox, adv_img)
-    """  
     output_images(bbox, adv_img, patch_name, str(i)+"_pp_")
     old_patch = tf.cast(new_patch, dtype=tf.float32)
     print("Epoch", i)
@@ -313,18 +223,13 @@ for patch_name in os.listdir(img_folder + "/" + patch_folder):
                       cv2.cvtColor(new_patch.numpy(), cv2.COLOR_RGB2BGR))
     
 def loss_object():
-    #print(patch)
     p = patch.numpy()
-    #print(p)
     a = apply_patch(images, p)
     s2 = new_run(p, a)
 
     confidence_list = []
     for ASes_of_one_image in s2:
-        #print(ASes_of_one_image['AS'])
-        #print("______________________________________________________________________________________________________________")
         for AS_of_one_image in ASes_of_one_image['AS']:
-            #print(AS_of_one_image['confidence_score'])
             confidence_list.append(AS_of_one_image['confidence_score'])
 
     loss = tf.divide(tf.math.reduce_sum(tf.math.log(confidence_list)), len(confidence_list))
