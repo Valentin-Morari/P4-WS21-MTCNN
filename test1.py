@@ -14,10 +14,14 @@ def tf_scale_image(img, scale):
     """
     This function was taken from MTCNN  (__scale_image) and ported to tensorflow 2.x
 
-    :param img: Image to resized
-    :param scale: Scale factor
-    :return: Given image scaled with the specified scale factor
+    :param img: tensor with dtype=float32
+        image to be resized
+    :param scale: numpy.float64
+        the scale factor
+    :return: tensor with dtype=float32
+        given image scaled with the specified scale factor
     """
+
     height, width, _ = img.shape
     width_scaled = tf.math.ceil(width * scale)
     height_scaled = tf.math.ceil(height * scale)
@@ -36,11 +40,19 @@ def generate_bounding_box(imap, reg, scale, t):
     This function was taken from MTCNN  (__generate_bounding_box) and mostly ported to tensorflow 2.x
     It uses heatmap to generate bounding boxes
 
-    :param imap:  Heat map?
-    :param reg: Regression vector?
-    :param scale: Scale with which the image was resized
-    :param t: The steps threshold
-    :return: Bounding boxes with their confidence score and
+    :param imap: tensor with dtype=float32
+        Heat map?
+    :param reg: tensor with dtype=float32
+        Regression vector?
+    :param scale: float
+        representing the scale with which the image was resized
+    :param t: float
+        representing the steps threshold
+    :return:
+        boundingboxtf: tensor with dtype=float32
+            bounding boxes
+        regtf: tensor with dtype=float32
+            regression vector
     """
 
     stride = 2
@@ -81,11 +93,14 @@ def nms(boxes, threshold, method):
     Non Maximum Suppression. This function was taken from MTCNN (__nms). And slightly ported to
     TensorFlow.
 
-    :param boxes: Tensorflow np array with bounding boxes.
-    :param threshold: The threshold
-    :param method: NMS method to apply. Available values ('Min', 'Union')
-    :return: Bounding boxes from boxes, which had the highest confidence score
-             than similar placed bounding boxes.
+    :param boxes: tensor with dtype=float32
+        containing bounding boxes
+    :param threshold: float
+        representing the threshold
+    :param method: str
+        stating which NMS method to apply. Available values ('Min', 'Union')
+    :return: nd-array
+        bounding boxes from parameter boxes, which had the highest confidence score than similar placed bounding boxes
     """
 
     if tf.size(boxes) == 0:  # start here
@@ -149,13 +164,15 @@ def nms(boxes, threshold, method):
     return pick
 
 
-def rerec(bbox):
+def tf_rerec(bbox):
     """
     This function was taken from MTCNN  (__rerec) and ported to tensorflow 2.x
     It reshapes the bounding box to a square by elongating the shorter sides.
 
-    :param bbox: Bounding box
-    :return: The bounding box converted to a square
+    :param bbox: tensor with dtype=float32
+        bounding box
+    :return: tensor with dtype=float32
+        the bounding box converted to a square
     """
 
     height = bbox[:, 3] - bbox[:, 1]
@@ -176,15 +193,18 @@ def rerec(bbox):
 
 def process_pnet_result(pnet_result):
     """
-    This code originated from MTCNN and represents the function __stage1 in MTCNN.
+    This code originated from MTCNN and represents the second half of the function __stage1 in MTCNN.
     It was ported to TensorFlow 2.x
 
-    It simulates the normal data flow of __stage1 in MTCNN.
+    It simulates the normal data flow of the second half of __stage1 after the execution of PNET
+    in MTCNN. It takes the result of PNET, generates bounding boxes from them and then picks the
+    best boxes by applying the NMS functions. Once for each bounding box in a scale loop and then
+    a last time with all bounding boxes, which survived the loops.
 
-    :param total_boxes: All bounding boxes, which were found in an scales loop and
-            survived Non Maximum Suppression(NMS)
-    :return: Bounding boxes, which should mark faces and have a higher score
-            [It would be the result of __stage1]
+    :param pnet_result: list
+        result of PNET containing imap and reg
+    :return: tensor with dtype=float32
+        bounding boxes, which should mark faces and have a higher score [It would be the result of __stage1]
     """
 
     total_boxes = tf.reshape(tf.convert_to_tensor(()), (0, 9))
@@ -229,7 +249,7 @@ def process_pnet_result(pnet_result):
         total_boxes = tf.transpose(tf.concat([[qq1], [qq2], [qq3], [qq4], [total_boxes[:, 4]]],
                                              axis=0))  # tf.concat(value, axis=0) is counterpart of the numpy function np.vstack() in Tensorflow and every element is put into brackets to be like the original from mtcnn
 
-        total_boxes = rerec(tf.identity(total_boxes))
+        total_boxes = tf_rerec(tf.identity(total_boxes))
 
         total_boxes_03 = tf.experimental.numpy.fix(total_boxes[:, 0:4])
         total_boxes_4 = total_boxes[:, 4]
@@ -245,9 +265,11 @@ def loss_object(predict_box):
     Calculates the result of the loss function stated in the paper with the confidence
     scores from each bounding box.
 
-    :param predict_box: Predicted bounding boxes with their confidence scores
-    :return: Result of the loss function stated in the paper but without applying IoU
-             on the bounding boxes with the ground truths of an image.
+    :param predict_box: tensor with dtype=float32
+        predicted bounding boxes with their confidence scores
+    :return: tensor with shape=() and dtype=float32
+        result of the loss function stated in the paper but without applying IoU on the bounding boxes with the
+        ground truths of an image.
     """
 
     ''' 
@@ -258,6 +280,7 @@ def loss_object(predict_box):
     # loss = tf.divide(tf.math.reduce_sum(tf.math.log(predict_box)), len(predict_box)) #THIS DOES ASCENT WITH TENSORFLOW DESCENT
     loss = tf.negative(tf.divide(tf.math.reduce_sum(tf.math.log(predict_box)),
                                  len(predict_box)))  # THIS DOES ASCENT WITH TENSORFLOW DESCENT
+
     return loss
 
 
@@ -272,6 +295,7 @@ def createPnet():
     weights = np.load(weight_file, allow_pickle=True).tolist()
     pnet = NetworkFactory().build_pnet()
     pnet.set_weights(weights['pnet'])
+
     return pnet
 
 
@@ -284,24 +308,32 @@ def imageChangeToFitPnet(image, scale):
     It was ported to TensorFlow 2.x
     The image is resized. Then, its dimensions are expanded and then transposed.
 
-    :param image: Image to be put into PNET
-    :param scale: Scale factor
-    :return: Image prepared for PNET
+    :param image: tensor with dtype=float32
+        image to be put into PNET
+    :param scale: numpy.float64
+        scale factor
+    :return: tensor with dtype=float32
+        image prepared for PNET
     """
 
     image = tf_scale_image(image, scale)
     image = image[tf.newaxis, ...]
     image = tf.transpose(image, (0, 2, 1, 3))
+
     return image
 
 
 def tf_IoU(boxA, boxB):
     """
-    Does Intersection over Union with the two bounding boxes
+    This code was taken directly from https://www.pyimagesearch.com/2016/11/07/intersection-over-union-iou-for-object-detection/
+    It does Intersection over Union with the two bounding boxes.
 
-    :param boxA: Bounding box
-    :param boxB: Bounding box
-    :return: Result of the Intersection over Union from boxA and boxB
+    :param boxA: tensor with shape=(4,) and dtype=float32
+        bounding box
+    :param boxB: tensor with shape(4,) and dtype=float32
+        bounding box
+    :return: tensor with shape=() and dtype=float32
+        result of the Intersection over Union from bounding box boxA and bounding box boxB
     """
 
     xA = tf.math.maximum(boxA[0], boxB[0])
@@ -330,10 +362,13 @@ def tf_IoU_multiple_boxes(bounding_boxes, ground_truths):
     Does Intersection over Union on each bounding box with each ground truth
     ATTENTION: This function is not used right now.
 
-    :param bounding_boxes: All found bounding boxes in the image found by PNET (Should surround faces)
-    :param ground_truths: Ground truths of the image (True positions of the faces in an image)
-    :return: Tensor array containing bounding boxes with their confidence scores. Each of the bounding boxes
-    had an IoU value of more than 0.6 with one of the ground truths.
+    :param bounding_boxes: tensor with dtype=float32
+        all found bounding boxes in the image found by PNET (Should surround faces)
+    :param ground_truths: tensor with dtype=float32
+        ground truths of the image (True positions of the faces in an image)
+    :return: tensor with dtype=flaot32
+        containing bounding boxes with their confidence scores. Each of the bounding boxes had an IoU value of higher
+        than 0.6 with one of the ground truths.
     """
 
     iou_result = []
@@ -360,10 +395,17 @@ def create_adversarial_pattern(image, ground_truth_boxes, scale):
     gradient, which will be applied to the patch to worsen the performance of __stage1 and therefore the
     performance of MTCNN.
 
-    :param image: Image which is used to train the patch
-    :param ground_truth_boxes: Ground truths of the image
-    :param scale: Scale factor with which the image is resized
-    :return: The gradient for the patch and the loss for the image
+    :param image: nd-array
+        of the image which is used to train the patch
+    :param ground_truth_boxes: tensor with dtype=float32
+        ground truths of the image
+    :param scale: numpy.float64
+        scale factor with which the image is resized
+    :return:
+        gradient: tensor with dtype=float32
+            the gradient for the patch
+        loss: tensor with shape=() and dtype=float32
+            the loss for the image
     """
 
     with tf.GradientTape() as tape:
@@ -382,16 +424,15 @@ def create_adversarial_pattern(image, ground_truth_boxes, scale):
         '''
         # Right now,trying to implement IoU from our paper into the tape,
             results in an IoU of zero, since the bounding boxes do not mark faces. 
-        #We need to resize our ground truth boxes, since the image was also resized
-        resized_ground_truth_boxes = ground_truth_boxes * scale
 
-        iou_probe = tf_IoU_multiple_boxes(probe, resized_ground_truth_boxes)
+        iou_probe = tf_IoU_multiple_boxes(probe, ground_truth_boxes)
 
         if tf.size(iou_probe) == 0:
             confidence_scores = tf.cast(np.array([0]), dtype=tf.float32)
         else:
             confidence_scores = iou_probe[:, 4]
         '''
+
         confidence_scores = probe[:, 4]
         loss = ascent_or_descent * loss_object(confidence_scores)
 
@@ -409,10 +450,14 @@ def tf_apply_patch(img, patch, ground_truths_of_image):
     ATTENTION: This function applies the patch only to the last face in ground truths. The right function is given in
             test2.py. This function is not changes, since the given test results used this function.
 
-    :param img: The original image
-    :param patch: The adversarial patch
-    :param ground_truths_of_image: Ground truth bounding boxes of the image, i.e. the marked faces
-    :return: The original image but with the patch placed, dependet on where the ground truths are given
+    :param img: nd-array
+        for the original image
+    :param patch: tensorflow variable with dtype=float32
+        the adversarial patch to be applied to the faces
+    :param ground_truths_of_image: tensor with dtype=float32
+        ground truth bounding boxes of the image, i.e. the marked faces
+    :return: tensor with dtype=32
+        the original image but with the patch placed, dependet on where the ground truths are given
     """
 
     alpha = 0.5
@@ -452,13 +497,16 @@ def tf_apply_patch(img, patch, ground_truths_of_image):
 
 def getRGB(image):
     """
-    Converts the image back to the RGB format
+    Converts the patch ot the image back to the RGB format
 
-    :param image: Normalised image
-    :return: The image in the RGB format
+    :param image: tensor with dtype=float32
+        normalized image
+    :return: tensor with dtype=float32
+        the image back in the RGB format
     """
 
     temp = image / 0.0078125 + 127.5
+
     return temp
 
 
@@ -468,10 +516,14 @@ def iterative_attack(target_image, ground_truth_boxes, scale):
     Creates an adversarial patch by executing similar code to the functions detect_faces and __stage1 in MTCNN. It tapes
     the execution of __stage1 to create a gradient, which it applies
 
-    :param target_image: Image being used to train the patch
-    :param ground_truth_boxes: Ground truth boxes from the image
-    :param scale: Scale factor with which the image will be resized
-    :return: Image on which the patch was placed
+    :param target_image: nd-array
+        for the image being used to train the patch
+    :param ground_truth_boxes: tensor with dtype=float32
+        ground truth boxes from the image
+    :param scale: numpy.float64
+        scale factor with which the image will be resized
+    :return: tensor with dtype=float32
+        image on which the patch was placed
     """
 
     upper_bound = (255 - 127.5) * 0.0078125  # ~ +1
@@ -502,7 +554,8 @@ def picture_images(learning_rate):
     https://github.com/yahi61006/adversarial-attack-on-mtcnn) to train the adversarial patch. And returns
     the patch as well as the images on which the patch was applied as images.
 
-    :param learning_rate: The learning rate for the Keras SGD optimizer
+    :param learning_rate: int
+        representing the learning rate for the Keras SGD optimizer
     """
 
     store_patch = getRGB(var_patch).numpy()
@@ -626,7 +679,8 @@ def face_Control_all(learning_rate):
     This function uses all the images from Face_Control (which were taken from the WIDER-FACES dataset)
     to train the adversarial patch. It outputs the adversarial patch into Face_Control/results/patches.
 
-    :param learning_rate: The learning rate for the Keras SGD optimizer
+    :param learning_rate: int
+        representing the learning rate for the Keras SGD optimizer
     """
 
     store_patch = getRGB(var_patch).numpy()
@@ -712,7 +766,8 @@ def face_control_variable(learning_rate):
     This function uses the images from Face_Control (which were taken from the WIDER-FACES dataset)
     to train the adversarial patch. It outputs the adversarial patch into Face_Control/results/patches.
 
-    :param learning_rate: The learning rate for the Keras SGD optimizer
+    :param learning_rate: int
+        representing the learning rate for the Keras SGD optimizer
     """
 
     # For now, we need to load the names of the images and their ground truths only ones,

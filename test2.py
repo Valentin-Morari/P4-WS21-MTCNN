@@ -14,10 +14,14 @@ def tf_scale_image(img, scale):
     """
     This function was taken from MTCNN  (__scale_image) and ported to tensorflow 2.x
 
-    :param img: Image to resized
-    :param scale: Scale factor
-    :return: Given image scaled with the specified scale factor
+    :param img: tensor with dtype=float32
+        image to be resized
+    :param scale: numpy.float64
+        the scale factor
+    :return: tensor with dtype=float32
+        given image scaled with the specified scale factor and then normalized
     """
+
     height = img.shape[0]
     width = img.shape[1]
 
@@ -38,8 +42,10 @@ def tf_rerec(bbox):
     This function was taken from MTCNN  (__rerec) and ported to tensorflow 2.x
     It reshapes the bounding box to a square by elongating the shorter sides.
 
-    :param bbox: Bounding box
-    :return: The bounding box converted to a square
+    :param bbox: tensor with dtype=float32
+        bounding box
+    :return: tensor with dtype=float32
+        the bounding box converted to a square
     """
 
     height = bbox[:, 3] - bbox[:, 1]
@@ -65,9 +71,12 @@ def loss_object(predict_boxes, ground_truth_boxes):
     with the ground truths of the image, to make sure that the bounding box is from a face.
     The loss function was given by the paper.
 
-    :param predict_box: Predicted bounding boxes in the image with confidence score
-    :param ground_truth_boxes: Ground truths of the image
-    :return: Result of the loss stated in the paper for Patch_IoU
+    :param predict_box: tensor with dtype=float32
+        predicted bounding boxes in the image with confidence score
+    :param ground_truth_boxes: tensor with dtype=float32
+        ground truths of the image
+    :return: tensor with shape=() and dtype=float32
+        result of the loss stated in the paper for Patch_IoU
     """
 
     # IoU for each bounding box with every ground truth
@@ -109,27 +118,36 @@ def imageChangeToFitPnet(image, scale):
     It was ported to TensorFlow 2.x
     The image is resized and normalized. Then, its dimensions are expanded and then transposed.
 
-    :param image: Image to be put into PNET
-    :param scale: Scale factor
-    :return: Image prepared for PNET
+    :param image: tensor with dtype=float32
+        image to be put into PNET
+    :param scale: numpy.float64
+        scale factor
+    :return: tensor with dtype=float32
+        image prepared for PNET
     """
+
     # Scaling and normalising the image
     scaled_image = tf_scale_image(image, scale)
 
     img_x = tf.expand_dims(scaled_image, 0)
     img_y = tf.transpose(img_x, (0, 2, 1, 3))
-    return img_y
 
+    return img_y
 
 
 def tf_IoU(boxA, boxB):
     """
-    Does Intersection over Union with the two bounding boxes
+    This code was taken directly from https://www.pyimagesearch.com/2016/11/07/intersection-over-union-iou-for-object-detection/
+    It does Intersection over Union with the two bounding boxes.
 
-    :param boxA: Bounding box
-    :param boxB: Bounding box
-    :return: Result of the Intersection over Union from boxA and boxB
+    :param boxA: tensor with shape=(4,) and dtype=float32
+        bounding box
+    :param boxB: tensor with shape(4,) and dtype=float32
+        bounding box
+    :return: tensor with shape=() and dtype=float32
+        result of the Intersection over Union from boxA and boxB
     """
+
     xA = tf.math.maximum(boxA[0], boxB[0])
     yA = tf.math.maximum(boxA[1], boxB[1])
 
@@ -155,12 +173,17 @@ def tf_IoU(boxA, boxB):
 def tf_IoU_multiple_boxes(bounding_boxes, ground_truths):
     """
     Does Intersection over Union on each bounding box with each ground truth
+    ATTENTION: This function is not used right now.
 
-    :param bounding_boxes: All found bounding boxes in the image found by PNET (Should surround faces)
-    :param ground_truths: Ground truths of the image (True positions of the faces in an image)
-    :return: Tensor array containing bounding boxes with their confidence scores. Each of the bounding boxes
-    had an IoU value of more than 0.6 with one of the ground truths.
+    :param bounding_boxes: tensor with dtype=float32
+        all found bounding boxes in the image found by PNET (Should surround faces)
+    :param ground_truths: tensor with dtype=float32
+        ground truths of the image (True positions of the faces in an image)
+    :return: tensor with dtype=flaot32
+        containing bounding boxes with their confidence scores. Each of the bounding boxes had an IoU value of higher
+        than 0.6 with one of the ground truths.
     """
+
     iou_result = []
 
     # IoU between each bounding box between every ground truth
@@ -188,12 +211,21 @@ def tf_generate_bounding_box(imap, reg, scale, t):
     This function was taken from MTCNN  (__generate_bounding_box) and mostly ported to tensorflow 2.x
     It uses heatmap to generate bounding boxes
 
-    :param imap: Heat map?
-    :param reg: Regression vector?
-    :param scale: Scale with which the image was resized
-    :param t: The steps threshold
-    :return: Bounding boxes with their confidence score and
+    :param imap: tensor with dtype=float32
+        Heat map?
+    :param reg: tensor with dtype=float32
+        Regression vector?
+    :param scale: float
+        representing the scale with which the image was resized
+    :param t: float
+        representing the steps threshold
+    :return:
+        boundingboxtf: tensor with dtype=float32
+            bounding boxes
+        regtf: tensor with dtype=float32
+            regression vector
     """
+
 
     stride = 2
     cellsize = 12
@@ -288,12 +320,21 @@ def create_adversarial_pattern(target_image, ground_truth_boxes, scales_pyramid,
     gradient, which will be applied to the patch to worsen the performance of __stage1 and therefore the
     performance of MTCNN.
 
-    :param target_image: Image which is used to train the patch
-    :param ground_truth_boxes: Ground truths of the image
-    :param scales_pyramid The scales_pyramid for the creation of the image pyramid of the image
-    :param steps_threshold: The steps threshold
-    :return: The gradient for the patch and the loss for the image
+    :param target_image: nd-array
+        image which is used to train the patch
+    :param ground_truth_boxes: tensor with dtype=float32
+        ground truths of the image
+    :param scales_pyramid: list
+        scales_pyramid for the creation of the image pyramid of the image
+    :param steps_threshold: list
+        the steps thresholds for each stage in MTCNN (0 for __stage1)
+    :return:
+        gradient: tensor with dtype=float32
+            the gradient for the patch
+        loss: tensor with shape=() and dtype=float32
+            the loss for the image
     """
+
     with tf.GradientTape() as tape:
         tape.watch(var_patch)
 
@@ -342,12 +383,18 @@ def create_adversarial_pattern(target_image, ground_truth_boxes, scales_pyramid,
 
 def tf_apply_patch(img, p, ground_truths_of_image):
     """
-    Applies the patch to the image.
+    Applies the patch to the last face stated in ground_truths_of_image.
+    ATTENTION: This function applies the patch only to the last face in ground truths. The right function is given in
+            test2.py. This function is not changes, since the given test results used this function.
 
-    :param img: The original image
-    :param p: The adversarial patch
-    :param ground_truths_of_image: Ground truths of the image, i.e. the marked faces
-    :return: The original image but with the patch placed, dependet on where the ground truths are given
+    :param img: nd-array
+        for the original image
+    :param patch: tensorflow variable with dtype=float32
+        the adversarial patch to be applied to the faces
+    :param ground_truths_of_image: tensor with dtype=float32
+        ground truth bounding boxes of the image, i.e. the marked faces
+    :return: tensor with dtype=32
+        the original image but with the patch placed, dependet on where the ground truths are given
     """
 
     alpha = 0.5
@@ -409,13 +456,17 @@ def tf_apply_patch(img, p, ground_truths_of_image):
 
 def compute_scale_pyramid(m, min_layer, scale_factor):
     """
-    This function was taken from MTCNN  (__generate_bounding_box)
+    This function was taken from MTCNN  (__compute_scale_pyramid)
     Prepares 12 scales (a Scale pyramid) with which the image will be resized and put into PNET.
 
-    :param m: 12 / min_face_size
-    :param min_layer: np.amin([height, width]) * m
-    :param scale_factor: Tells how much each scale should be smaller than the other
-    :return: Scale pyramid for the image
+    :param m: float
+        representing 12 / min_face_size like in MTCNN
+    :param min_layer: numpy.float64
+        representing np.amin([height, width]) * m like in MTCNN
+    :param scale_factor: float
+        representing the scale factor. It tells how much each scale should be smaller than the other
+    :return: list
+        scale pyramid for the image
     """
     scales = []
     factor_count = 0
@@ -434,18 +485,30 @@ def prepare_scales_for_pnet(img, scale_factor, min_face_size):
     It prepares scales (a scale pyramid), which will be used to resize the image
     to find different sized faces.
 
-    :param img: RGB image put into MTCNN on which we will place the patch
-    :param scale_factor: Tells how much each scale should be smaller than the other
-    :param min_face_size: 20 set by MTCNN
-    :return: Scale pyramid for the image
+    :param img: nd_array
+        RGB image on which we will place the patch and put into PNET
+    :param scale_factor: float
+        representing the scale factor. It tells how much each scale should be smaller than the other
+    :param min_face_size: int
+        20 set by MTCNN (maybe the minimal face size)
+    :return: list
+        scale pyramid for the image
     """
+
+    print("IMG")
+    print(type(img))
+    print("SF")
+    print(type(scale_factor))
+    print("MFS")
+    print(type(min_face_size))
     height, width, _ = img.shape
 
     m = 12 / min_face_size
     min_layer = np.amin([height, width]) * m
 
     scales_from_mtcnn = compute_scale_pyramid(m, min_layer, scale_factor)
-
+    print("SFM")
+    print(type(scales_from_mtcnn))
     return scales_from_mtcnn
 
 
@@ -454,10 +517,13 @@ def iterative_attack(target_image, ground_truth_boxes, optimizer):
     Creates an adversarial patch by executing similar code to the functions detect_faces and __stage1 in MTCNN. It tapes
     the execution of __stage1 to create a gradient, which it applies
 
-    :param target_image: Image being used to train the patch
-    :param ground_truth_boxes: Ground truth boxes from the image
+    :param target_image: nd-array
+        for the image being used to train the patch
+    :param ground_truth_boxes: tensor with dtype=float32
+        ground truth boxes from the image
     :param optimizer: The used Keras optimizer
-    :return: Image on which the patch was placed
+    :return: tensor with dtype=float32
+        image on which the patch was placed
     """
 
     scale_factor = 0.709  # Set like mtcnn __init__
@@ -490,7 +556,8 @@ def picture_images(amp_factor):
     https://github.com/yahi61006/adversarial-attack-on-mtcnn) to train the adversarial patch. And returns
     the patch as well as the images on which the patch was applied as images.
 
-    :param amp_factor: Amplification factor being used in the Keras SGD optimizer for the learning rate
+    :param amp_factor: int
+        representing the learning rate for the Keras SGD optimizer
     """
 
     # Used to output the patch at the start of the function call. To see the initial patch
@@ -607,7 +674,8 @@ def face_control_variable(amp_factor):
     This function uses the images from Face_Control (which were taken from the WIDER-FACES dataset)
     to train the adversarial patch. It outputs the adversarial patch into Face_Control/results/patches.
 
-    :param amp_factor: Amplification factor being used in the Keras SGD optimizer for the learning rate
+    :param amp_factor: int
+        representing the learning rate for the Keras SGD optimizer
     """
     # For now, we need to load the names of the images and their ground truths only ones,
     # since we only use one directory
@@ -730,5 +798,5 @@ for file in allFileList:
     '''
     Functions for different image dataset to train the patch
     '''
-    # picture_images(amplification_factor)
+    #picture_images(amplification_factor)
     face_control_variable(amplification_factor)
