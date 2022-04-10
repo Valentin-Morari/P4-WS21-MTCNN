@@ -29,12 +29,12 @@
 # It has been rebuilt from scratch, taking the David Sandberg's implementation as a reference.
 #
 
-import copy #used for creating deep copies where changes won't affet the original7
+import copy #used for creating deep copies where changes won't affet the original files
 
 import cv2 #image processing framework
-import numpy as np 
+import numpy as np #extend math library in python
 import pkg_resources #weights loading
-import tensorflow as tf 
+import tensorflow as tf #machine learning framework
 
 import math
 
@@ -43,37 +43,48 @@ from mtcnn.network.factory import NetworkFactory
 
 __author__ = "Iván de Paz Centeno" #Adapted for P4 course by Valentin Morari and Eduard Bersch
 
-def IoU(boxA,
-        boxB):  # Code taken directly from https://www.pyimagesearch.com/2016/11/07/intersection-over-union-iou-for-object-detection/
-    # determine the (x, y)-coordinates of the intersection rectangle
-    # print("BoxA: ")
-    # print(boxA)
-    # print("BoxB: ")
-    # print(boxB)
+def IoU(boxA, boxB):
+    """
+    This code was taken directly from https://www.pyimagesearch.com/2016/11/07/intersection-over-union-iou-for-object-detection/
+    It does Intersection over Union with the two bounding boxes.
 
-    lambda_IoU = 0.6  # To match paper's concrete parameters
+    :param boxA: list
+        representing a bounding box
+    :param boxB: list
+        representing a bounding box
+    :return: float
+        representing the result of the Intersection over Union from boxA and boxB
+    """
+    # determine the (x, y)-coordinates of the intersection rectangle
+    lambda_IoU = 0.6  # To match paper's concrete parameters - adjust for allowing smaller faces to be detected, compared to the original
 
     xA = max(boxA[0], boxB[0])
     yA = max(boxA[1], boxB[1])
     # MTCNN doesn't give the end points in [2] and [3] but the distance from the start point to the end point
     xB = min(boxA[0] + boxA[2], boxB[0] + boxB[2])
     yB = min(boxA[1] + boxA[3], boxB[1] + boxB[3])
-    # print("xA = %d -- yA = %d -- xB = %d -- yB = %d" % (xA,yA,xB,yB))
     # compute the area of intersection rectangle
     interArea = max(0, xB - xA + 1) * max(0, yB - yA + 1)
-    # compute the area of both the prediction and ground-truth
-    # rectangles
+    # compute the area of both the prediction and ground-truth bounding boxes
     boxAArea = (boxA[2]) * (boxA[3])
     boxBArea = (boxB[2]) * (boxB[3])
     # compute the intersection over union by taking the intersection
     # area and dividing it by the sum of prediction + ground-truth
     # areas - the interesection area
-    # print("interArea = %d -- boxAArea = %d -- boxBArea = %d" % (interArea, boxAArea, boxBArea))
     iou = interArea / float(boxAArea + boxBArea - interArea)
-    # return the intersection over union value
+    # return the intersection over union result 
     return iou > lambda_IoU
 
-def not_negative(x): #Simple function to ensure the value is either positive or zero
+def not_negative(x): 
+  """
+  Simple function to ensure the value is either positive or zero
+  
+  :param x: number
+    variable that we want to ensure is non-negative
+  :return: x
+    non-negative value of x
+  """
+  
   if x<0:
     return 0
   else:
@@ -81,10 +92,23 @@ def not_negative(x): #Simple function to ensure the value is either positive or 
 
 class StageStatus(object):
     """
-    Keeps status between MTCNN stages
+    Keeps information between MTCNN stages
+    
+    :param object: base class
+      used exclusively for compatibility with python 2.x
     """
 
     def __init__(self, pad_result: tuple = None, width=0, height=0):
+        """
+        Performs initialization of a StageStatus instance
+        
+        :param pad_result: tuple
+          bounded boxes padded to a square shape; defaults to None
+        :param width: int
+          total width of the image; defaults to 0
+        :param height: int
+          total height of the image; defaults to 0
+        """
         self.width = width
         self.height = height
         self.dy = self.edy = self.dx = self.edx = self.y = self.ey = self.x = self.ex = self.tmpw = self.tmph = []
@@ -93,42 +117,59 @@ class StageStatus(object):
             self.update(pad_result)
 
     def update(self, pad_result: tuple):
+        """
+        Updates variables of an existing StageStatus instance
+        
+        :param pad_result: tuple
+          bounded boxes padded to a square shape
+        """
         s = self
         s.dy, s.edy, s.dx, s.edx, s.y, s.ey, s.x, s.ex, s.tmpw, s.tmph = pad_result
 
 
 class MTCNN(object):
     """
-    Allows to perform MTCNN Detection ->
-        a) Detection of faces (with the confidence probability) # Only faces are used for the P4 project
+    Allows to perform MTCNN detection ->
+        a) Detection of faces (with the confidence probability) - Only faces are used for the P4 project
         b) Detection of keypoints (left eye, right eye, nose, mouth_left, mouth_right)
+    
+    :param object: base class
+      used exclusively for compatibility with python 2.x
     """
 
     def __init__(self, weights_file: str = None, min_face_size: int = 20, steps_threshold: list = None,
                  scale_factor: float = 0.709):
         """
         Initializes the MTCNN.
-        :param weights_file: file uri with the weights of the P, R and O networks from MTCNN. By default it will load
-        the ones bundled with the package.
-        :param min_face_size: minimum size of the face to detect
-        :param steps_threshold: step's thresholds values
-        :param scale_factor: scale factor
+        
+        :param weights_file: string
+          file uri with the weights of the P, R and O networks from MTCNN. When not specified,
+        it loads the ones bundled with the package.
+        :param min_face_size: int
+          minimum size of the face to detect. Defaults to 20
+        :param steps_threshold: list
+          step threshold values
+        :param scale_factor: float
+          scale factor. Defaults to 0.709
         """
+        
         if steps_threshold is None:
             steps_threshold = [0.6, 0.7, 0.7]
 
         if weights_file is None:
             weights_file = pkg_resources.resource_stream('mtcnn', 'data/mtcnn_weights.npy')
         
-        self.tape = tf.GradientTape() # Used to compute gradients. Persistent parameter makes it compute over ALL previous computations over the previous epochs
+        self.tape = tf.GradientTape() # Used to compute gradients
         
-        self._min_face_size = min_face_size
+        self._min_face_size = min_face_size 
         self._steps_threshold = steps_threshold
         self._scale_factor = scale_factor
-        self.amplification = 1000000 #default, can be specfiied when calling new_detect_faces
+        self.amplification = 1000000 # default value, can be specfiied when calling new_detect_faces
         
-        self.resize_method = 'lanczos5' #tensorflow resize method. NOTE: it is not AREA, as it was originally, because AREA method is the only one without an automatic gradient. Until it is added, we use lanczos5
-        self.antialias = True #antialiasing used in tensorflow image resizing. default behavior: on
+        self.resize_method = 'lanczos5' # tensorflow resize method used during adversarial patch training
+        # NOTE: it is not AREA, as it was originally, because the AREA resize method is the only one without an automatic gradient. 
+        # Until it is added, we use lanczos5
+        self.antialias = True # antialiasing to use in tensorflow image resizing. default behavior: on
         
         self._pnet, self._rnet, self._onet = NetworkFactory().build_P_R_O_nets_from_file(weights_file)
     
@@ -136,16 +177,33 @@ class MTCNN(object):
 
     @property
     def min_face_size(self):
+        """
+        Returns minimum face size parameter of MTCNN instance.
+        """ 
         return self._min_face_size
 
     @min_face_size.setter
     def min_face_size(self, mfc=20):
+        """
+        Attempts to set minimum face size parameter of MTCNN instance. Reverts to a default of 20 if unsuccessful.
+        
+        :param mfc: int
+          new minimum face size value. Defaults to 20
+        """
         try:
             self._min_face_size = int(mfc)
         except ValueError:
             self._min_face_size = 20
 
     def __compute_scale_pyramid(self, m, min_layer):
+        """
+        Computes scale pyramid to be fed into PNET during stage 1.
+        
+        :param m: float
+          maximum scale of the pyramid
+        :param min_layer: float 
+          minimum face size that the P network can detect
+        """
         scales = []
         factor_count = 0
 
@@ -160,9 +218,13 @@ class MTCNN(object):
     def __scale_image(image, scale: float):
         """
         Scales the image to a given scale.
-        :param image:
-        :param scale:
-        :return:
+        
+        :param image: nd-array
+          image data to be rescaled
+        :param scale: float
+          scale used for image rescaling
+        :return: nd-array
+          rescaled image that is normalized to the interval (-1, 1)
         """
         height, width, _ = image.shape
 
@@ -171,14 +233,32 @@ class MTCNN(object):
 
         im_data = cv2.resize(image, (width_scaled, height_scaled), interpolation=cv2.INTER_AREA)
 
-        # Normalize the image's pixels
+        # Normalize the image's pixels to the interval (-1, 1)
         im_data_normalized = (im_data - 127.5) * 0.0078125
 
         return im_data_normalized
 
     @staticmethod
     def __generate_bounding_box(imap, reg, scale, t): #left unmodified
-
+        """
+        Generates bounding box based on PNET results 
+        
+        :param imap:
+          mapped indexes of PNET face detection result
+        :param reg: nd-array
+          bounding box regression vector 
+        :param scale: float
+          scale to which the original image was resized
+        :paramt t: float
+          step threshold to surpass
+          
+        :return 
+          boundingbox: nd-array
+            generated boundingbox for detected faces
+          reg: nd-array 
+            new bounding box regression vector
+        """
+        
         # use heatmap to generate bounding boxes
         stride = 2
         cellsize = 12
@@ -216,10 +296,14 @@ class MTCNN(object):
         """
         Non Maximum Suppression.
 
-        :param boxes: np array with bounding boxes.
-        :param threshold: number from 0 to 1, to serve as minimum value to reach by NMS
-        :param method: NMS method to apply. Available values ('Min', 'Union')
-        :return:
+        :param boxes: tensor 
+          bounding boxes to perform nms on
+        :param threshold: float
+          number from 0 to 1, to serve as minimum value to reach by NMS
+        :param method: str
+          NMS method to apply. Available values ('Min', 'Union')
+        :return: nd-array 
+          index list for which bounding boxes to process on after nms is done
         """
         
         if tf.size(boxes) == 0:           #start here
@@ -286,10 +370,14 @@ class MTCNN(object):
         """
         Non Maximum Suppression.
 
-        :param boxes: np array with bounding boxes.
-        :param threshold:
-        :param method: NMS method to apply. Available values ('Min', 'Union')
-        :return:
+        :param boxes: nd-array 
+          bounding boxes to perform nms on
+        :param threshold: float
+          number from 0 to 1, to serve as minimum value to reach by NMS
+        :param method: str
+          NMS method to apply. Available values ('Min', 'Union')
+        :return: nd-array 
+          which bounding boxes remain after nms
         """
         
         if boxes.size == 0:
@@ -335,7 +423,19 @@ class MTCNN(object):
 
     @staticmethod
     def __tf_pad(total_boxes, w, h): #converted to tensorflow
-        # compute the padding coordinates (pad the bounding boxes to square)
+        """
+        Compute the padding coordinates (pad the bounding boxes to squares)
+        
+        :param total_boxes: tensor
+          all bounding boxes taken over from stage 2
+        :param w: int
+          width of image
+        :param h: int
+          height of image
+        :return: 
+          padding data to be kept track of by StageStatus
+        """
+        
         tmpw = tf.cast((total_boxes[:, 2] - total_boxes[:, 0] + 1), dtype=tf.int32)
         tmph = tf.cast((total_boxes[:, 3] - total_boxes[:, 1] + 1), dtype=tf.int32)
         numbox = total_boxes.shape[0]
@@ -379,7 +479,19 @@ class MTCNN(object):
 
     @staticmethod
     def __pad(total_boxes, w, h): #not converted to tensorflow, left to support functions that have not yet been ported and need it
-        # compute the padding coordinates (pad the bounding boxes to square)
+        """
+        Compute the padding coordinates (pad the bounding boxes to squares)
+        
+        :param total_boxes: nd-array
+          all bounding boxes taken over from stage 2
+        :param w: int
+          width of the image
+        :param h: int
+          height of the image
+        :return: 
+          padding data to be kept track of by StageStatus
+        """
+        
         tmpw = (total_boxes[:, 2] - total_boxes[:, 0] + 1).astype(np.int32)
         tmph = (total_boxes[:, 3] - total_boxes[:, 1] + 1).astype(np.int32)
         numbox = total_boxes.shape[0]
@@ -413,7 +525,15 @@ class MTCNN(object):
 
     @staticmethod
     def __rerec(bbox): # left unchanged
-        # convert bbox to square
+        """
+        Convert bbox to a square
+        
+        :param bbox: nd-array
+          bounding box
+        :return: nd-array
+          bounding box
+        """
+        
         height = bbox[:, 3] - bbox[:, 1]
         width = bbox[:, 2] - bbox[:, 0]
         max_side_length = np.maximum(width, height)
@@ -424,7 +544,16 @@ class MTCNN(object):
 
     @staticmethod
     def __bbreg(boundingbox, reg): #unconverted, as stage2 needs it, and no plans to convert it to tensorflow have yet been made
-        # calibrate bounding boxes
+        """
+        Calibrate bounding boxes through bounding box regression
+        
+        :param boundingbox: nd-array
+          all bounding boxes obtained so far as part of the face detection process
+        :param reg: nd-array
+          regression vector
+        :return: nd-array
+          calibrated bounding boxes
+        """
         if reg.shape[1] == 1:
             reg = np.reshape(reg, (reg.shape[2], reg.shape[3]))
 
@@ -439,7 +568,17 @@ class MTCNN(object):
     
     @staticmethod
     def __tf_bbreg(boundingbox, reg): #used in stage 3, so was converted to tensorflow
-        # calibrate bounding boxes
+        """
+        Calibrate bounding boxes through bounding box regression
+        
+        :param boundingbox: tensor
+          all bounding boxes obtained so far as part of the face detection process
+        :param reg: tensor
+          regression vector
+        :return: tensor
+          calibrated bounding boxes
+        """
+        
         if reg.shape[1] == 1:
             reg = tf.reshape(reg, (reg.shape[2], reg.shape[3]))
 
@@ -465,15 +604,19 @@ class MTCNN(object):
         """
         Applies the patch to the image. Please use this Function only in new_detect_faces().
 
-        :param img: The original image
-        :param patch: The adversial patch
-        :param ground_truths_of_image: Ground truth bounding boxes of the image
-        :return: The original image but with the patch placed, dependet on where the ground truths are given
+        :param img: nd-array
+          The original image
+        :param patch: tensor
+          The adversarial patch
+        :param ground_truths_of_image: list
+          Ground truth bounding boxes of the faces on the image
+        :return: tensor
+          The original image but with the patch placed, relative to the ground truths 
         """
         alpha = 0.5
         for bounding_box in ground_truths_of_image:  # ground truth loop
 
-            resize_value = alpha * math.sqrt(bounding_box[2] * bounding_box[3]) #as per the paper - careful, alpha here is hardcoded, independently of the one in executive program code
+            resize_value = alpha * math.sqrt(bounding_box[2] * bounding_box[3]) #as per the paper - careful, alpha here is hardcoded, independently of the ones used elsewhere
             tf_resized_P = tf.image.resize(patch, (round(resize_value), round(resize_value)), method = self.resize_method, antialias = self.antialias) #tf image resize LANCZOS instead of cv2.AREA. 
             #Reason: method='area' doesn't have built-in gradient approximation for backpropagation. Until it is added we use lanczos5 with antialiasing to approximate the results of cv2.AREA
             #lanczos5 should be suitable approximation for cv2 resize method with method parameter set to area (each value is 1-5 pixels different at most, when running comparisons).
@@ -514,19 +657,24 @@ class MTCNN(object):
             overlay = tf_resized_P - img[y_start:y_end, x_start:x_end]
             overlay_pad = tf.pad(overlay, [[y_start, adv_img_rows - y_end], [x_start, adv_img_cols - x_end], [0, 0]]) 
             img = img + overlay_pad
-
+            
         return img
 
     def new_detect_faces(self, img, patch, ground_truths_of_image, amplification) -> list:
         """
         Detects bounding boxes from the specified image.
-        :param img: image to process
-        :patch: adversarial patch we use to lower face detection confidence scores
-        :ground_truths_of_image: ground truth list to compare our results to -> passed to __tf_apply_patch
-        :amplification: gradient amplification factor, used to offset working with smaller image number
-        :return: list containing all the bounding boxes detected with their keypoints.
+        
+        :param img: nd-array
+          image to process
+        :param patch: tensor
+          adversarial patch we use to lower face detection confidence scores
+        :param ground_truths_of_image: list
+          ground truth list to compare our results to -> passed to __tf_apply_patch
+        :amplification: int
+          gradient amplification factor, used to offset working with smaller image number
+        :return: list
+          list containing all the bounding boxes detected with their keypoints.
         """
-
         self.amplification = amplification
         self.patch = tf.Variable(patch, dtype=tf.float32) #convert patch to a tensorflow variable
         self.ground_truths_of_image = ground_truths_of_image
@@ -539,7 +687,7 @@ class MTCNN(object):
         height, width, _ = self.adv_img.shape
         stage_status = StageStatus(width=width, height=height)
 
-        m = 12 / self._min_face_size
+        m = 12 / self._min_face_size # 12 is the face size the P network can detect
         min_layer = np.amin([height, width]) * m
 
         scales = self.__compute_scale_pyramid(m, min_layer)
@@ -582,10 +730,18 @@ class MTCNN(object):
     def __new_stage1(self, image, scales: list, stage_status: StageStatus): #left unchanged - responsible for PNET
         """
         First stage of the MTCNN.
-        :param image:
-        :param scales:
-        :param stage_status:
-        :return:
+        
+        :param image: nd-array
+          image to process
+        :param scales: list
+          list of scales used for image rescaling
+        :param stage_status: StageStatus
+          padding data kept track of by a StageStatus instance
+        
+        :return total_boxes: nd-array
+          face bounding boxes detected by PNET
+        :return status: StageStatus
+          modified padding data kept track of by a StageStatus instance
         """
         total_boxes = np.empty((0, 9))
         status = stage_status
@@ -630,16 +786,23 @@ class MTCNN(object):
             total_boxes[:, 0:4] = np.fix(total_boxes[:, 0:4]).astype(np.int32)
             status = StageStatus(self.__pad(total_boxes.copy(), stage_status.width, stage_status.height),
                                  width=stage_status.width, height=stage_status.height)
-
+        
         return total_boxes, status
 
     def __new_stage2(self, img, total_boxes, stage_status: StageStatus): #left unchanged - responsible for RNET
         """
         Second stage of the MTCNN.
-        :param img:
-        :param total_boxes:
-        :param stage_status:
-        :return:
+        
+        :param img: nd-array
+          image to be processed
+        :param total_boxes: nd-array
+          face bounding boxes detected by PNET
+        :param stage_status: StageStatus
+        
+        :return total_boxes: nd-array
+          face bounding boxes detected by RNET
+        :return status: StageStatus
+          modified padding data kept track of by a StageStatus instance
         """
 
         num_boxes = total_boxes.shape[0]
@@ -690,12 +853,18 @@ class MTCNN(object):
       """
         Third stage of the MTCNN. Converted to tensorflow to be able to automatically backpropagate gradient generation over ONET.
 
-        :param img: image used for face detection and also adversarial patch generation
-        :param total_boxes: all bounding boxes taken over from stage 2
-        :param stage_status: local MTCNN parameters
-        :return:
+        :param img: nd-array
+          image used for face detection and also adversarial patch generation
+        :param total_boxes: tensor
+          all bounding boxes taken over from stage 2, converted into a tensor between stages 2 and 3
+        :param stage_status: StageStatus
+          local MTCNN parameters for padding saved through a StageStatus instance
+          
+        :return tf_total_boxes: tensor
+          final set of face detection results in the form of bounding boxes, coupled with confidence scores
+        :return points: nd-array
+          positions of key points on the face 
       """
-        
       with self.tape as tape: #used to calculate the gradient
         tape.watch(self.patch)
         tf_img = self.__tf_apply_patch(self, img, self.patch, self.ground_truths_of_image) # (re)apply patch to image: needed so the gradient Tape "sees" it and can backpropagate over it
@@ -845,7 +1014,7 @@ class MTCNN(object):
                       indices.append(i)
         
         """
-        Why we need this monstrosity of a one-liner: for some arcane reason, Tensorflow in its current version refuses to correctly calculate the gradient if all the operations aren't sequentially done in one line.
+        Why we need the one-liner below: for some unkown reason, Tensorflow in its current version refuses to correctly calculate the gradient if all the operations aren't sequentially done in one line.
         Could be because assigning Tensors to a variable creates unique copies, rather than references - whatever the reason, this needs to be kept in one line to ensure the gradient won't return None.
         """
         
@@ -856,5 +1025,4 @@ class MTCNN(object):
       if tf_loss:
         gradient = tape.gradient(tf_loss, self.patch) # calculate gradient based on loss. self.patch -> tf_img -> MANY tf_tmp -> tf_tempimg -> / DOESN'T KNOW HOW TO DO GRADIENT OF 'AREA' RESIZE / -> tf_tempimg2 -> tf_loss
         self.patch.assign(tf.clip_by_value(self.patch+gradient*self.amplification, clip_value_min = 0, clip_value_max = 255)) #update patch and normalize value to within the RGB spectrum
-        
       return tf_total_boxes, points
