@@ -42,21 +42,18 @@ ASes = [ # list of images with their ASes
 """
   
 labels = open(img_folder + "/" + "wider_face_train_bbx_gt.txt", "r") #read WIDERFACE ground truth labels (taken from the training set)
-
-#for _ in range(40077): #skip to the dataset relevant to us
-#      next(labels)
     
-n = 0 #number of photos processed
+img_count = 0 #number of photos processed
 
 while labels:
-    if n == 460: #stop when number of photos processed reaches desired value
+    if img_count == 460: #stop when number of photos processed reaches desired value
       labels = open(img_folder + "/" + "wider_face_train_bbx_gt.txt", "r")
       for _ in range(40077):
           next(labels)
-    if n == 1029:
+    if img_count == 1029:
         break
-      
-    n += 1
+
+    img_count += 1
     img_name = labels.readline().rstrip("\n") #reads image name from list of labels
     if img_name == "": #stop if we reach the end of the labels file
         labels.close()
@@ -99,10 +96,23 @@ def IoU(boxA,
     return iou
 
 
-def output_images(ASes_output, originals, patch_output, prefix = ""):
-    """ handles storing the images outside of the program's memory """
+def output_images(ASes_output, imgs, patch_output, prefix = ""):
+    """
+    handles storing the images outside of the program's memory
+
+    :param ASes_output: Adversarial Sample Set structure
+        adversarial samples
+    :param imgs:
+        images on which the patch was applied to
+    :param patch_output:
+        the adversarial patch
+    :param prefix: str
+        stating the epoch in which the images are returned. Default is ""
+    :return:
+        None
+    """
     
-    working_images = copy.deepcopy(originals)  # don't modify the original pictures
+    working_images = copy.deepcopy(imgs)  # don't modify the original pictures
 
     for image_nr in range(len(working_images)):  # loop through all
 
@@ -130,44 +140,36 @@ def output_images(ASes_output, originals, patch_output, prefix = ""):
             cv2.putText(working_images[image_nr], str(confidence_score), (bounding_box[0], bounding_box[1]), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2, cv2.LINE_AA) #places confidence score over the detected face boxes
                           
         # Creates working_images in which the faces are marked through their bounding boxes
-        cv2.imwrite(img_folder + "/" + "1kImgResultsValentin" + "/" + "_out_" + prefix + image_names[image_nr].split("/")[1], cv2.cvtColor(working_images[image_nr], cv2.COLOR_RGB2BGR))
+        cv2.imwrite(target_folder + "/" + "_out_" + prefix + image_names[image_nr].split("/")[1], cv2.cvtColor(working_images[image_nr], cv2.COLOR_RGB2BGR))
 
         np_patch_out = patch_output.numpy() #convert from Tensorflow variable to numpy, numerical-only representation
         np_patch_out = np.fix(np_patch_out)
-        cv2.imwrite(img_folder + "/" + "1kImgResultsValentin" + "/" + "_out_" + prefix + "Adversarial_Patch.jpg",
+        cv2.imwrite(target_folder + "/" + "_out_" + prefix + "Adversarial_Patch.jpg",
                     cv2.cvtColor(np_patch_out, cv2.COLOR_RGB2BGR)) # Stores and overwrites latest Adversarial_Patch image in local folder (used for visual convenience)
-        
 
-def apply_patch(originals, patch):
-    """ Applies the adversarial patch onto the original pictures """
-    
-    working_images = copy.deepcopy(originals)  # don't modify the original pictures
-    for image_nr in range(len(working_images)): # loop through the copied pictures
-
-        ground_truth_boxes = ground_truths[image_names[image_nr]] #pull up ground_truth data for this picture
-
-        # draw detected face + plaster patch over source
-        for bounding_box in ground_truth_boxes:  # ground truth loop
-            resize_value = alpha * math.sqrt(bounding_box[2] * bounding_box[3]) #as per the paper (pg. 7 of "Design and Interpretation of Universal Adversarial Patches in Face Detection")
-            resized_P = cv2.resize(patch, (round(resize_value), round(resize_value))) #as per the paper (pg. 7 of "Design and Interpretation of Universal Adversarial Patches in Face Detection")
-
-            x_P = round(bounding_box[2] / 2) # as per the paper, x_P is in the center position of the bounding box
-            y_P = round(resize_value / 2) # as per the paper, y_P is in the center position of the bounding box
-
-            # draw patch over source image, by specifying the coordinates to overwrite
-            working_images[image_nr][
-            y_P + bounding_box[1] - round(resized_P.shape[1] / 2):y_P + bounding_box[1] - round(
-                resized_P.shape[1] / 2) + resized_P.shape[1],
-            x_P + bounding_box[0] - round(resized_P.shape[0] / 2):x_P + bounding_box[0] - round(
-                resized_P.shape[0] / 2) + resized_P.shape[0]] = resized_P
-
-    return working_images
 
 def new_run(patch_used, original_images, amplification_factor:int):
-    """ runs one epoch """
+    """
+    Trains an adversarial patch on given images. (Represents one epoch from the paper)
+
+    :param patch_used: tensor of dtype=float32
+        adversarial patch (a small image) to be trained by applying it onto faces for the purpose of reducing
+        their detection rate
+    :param original_images: list
+        images on which the patch will be trained
+    :param amplification_factor: int
+        representing the amplification factor, which is used to amplify training of the patch
+    :return:
+        ASes: Adversarial Sample Set structure
+            adversarial samples
+        adv_img: list containing nd-arrays
+            image on which the patch was applied to
+        tmp_patch: TensorFlow variable
+            the adversarial patch after one epoch
+    """
     
     result = [] #stores MTCNN face detection result
-    adv_img = [] #stores images with patch applied to them
+    adv_imgs = [] #stores images with patch applied to them
     tmp_patch = patch_used #initialize temporary patch value to input patch
     detector = MTCNN() #initialize the MTCNN detector (repeated for alleviating RAM)
     
@@ -180,12 +182,12 @@ def new_run(patch_used, original_images, amplification_factor:int):
           
           tmp_patch = new_patch #store new patch in the temporary variable
           result.append(tmp_result) #store face detection results
-          adv_img.append(tmp_adv_img) #store image with patch applied to it
+          adv_imgs.append(tmp_adv_img) #store image with patch applied to it
           
         except Exception as e: #if exception is met store empty result and image without patch applied to it
           print("Image", i, " (skipping) has the following error:", e)
           result.append([])
-          adv_img.append(original_images[i])
+          adv_imgs.append(original_images[i])
         
         #Restarting MTCNN every 3 images, to save memory. It may rise up to 8GB sometimes. Reseting also resets RAM usage, at least under Windows.
         if i % 3 == 0:
@@ -197,7 +199,7 @@ def new_run(patch_used, original_images, amplification_factor:int):
     # Extracts the bounding boxes from the detected faces
     for image_nr in range(len(original_images)):
         AS = [] # List of Adversarial Samples for this image (multiple faces -> multiple samples)
-        faces = result[image_nr] #access face detection results for current image
+        faces = result[image_nr] # access face detection results for current image
         
         # draw detected face + plaster patch over source
         for j in range(len(faces)):
@@ -209,17 +211,10 @@ def new_run(patch_used, original_images, amplification_factor:int):
                     AS.append({'anchor': bounding_box, 'ground_truth_bounding_box': ground_truth_bounding_box,
                                'confidence_score': confidence_score, 'patch': patch_used})
 
-            # print("GROUND: ")
-            # print(ground_truth_bounding_box)
-
-            # print("AS: ")
-            # print(AS)
-
         ASes.append({'ground_truth_image': images[image_nr], 'AS': AS})
-        # print(ASes)
 
     # AS = [ASi for ASi in AS if IoU(ASi[0], ASi[1]) > lambda_IoU]
-    return ASes, adv_img, tmp_patch
+    return ASes, adv_imgs, tmp_patch
 
 """
 #FOR PATCH INITIALIZATION FROM 0
@@ -227,47 +222,28 @@ init_patch = np.random.randint(255, size=(128, 128, 3),
                                dtype=np.uint8)  # Patch Initialization - Set w^P and h^P = 128 to match the paper
 """
 
-#"""
 #FOR OVERTAKING EXISTING PATCH
 init_patch = cv2.cvtColor(cv2.imread((img_folder + "/" + "Patches_Training" + "/" + "_out_13_AmpF=100000_Adversarial_Patch.jpg")), cv2.COLOR_BGR2RGB)
-#"""
-# s1 = run(init_patch, images)  # should be fineyy
-# output_images(s1, images)
-# input("Check images now...")
-
-#a = apply_patch(images, init_patch)
-#s2 = run(init_patch, a)  # should be fineyy
-#output_images(s2, a)
 
 old_patch = tf.cast(init_patch, dtype=tf.float32)
 
 amplification_factor = 1000000
-cv2.imwrite(img_folder + "/" + "1kImgResultsValentin" + "/" + "_out_" + "INIT_"+ "AmpF=" + str(amplification_factor) +"_Adversarial_Patch.jpg",
-            cv2.cvtColor(init_patch, cv2.COLOR_RGB2BGR))
+try_nr = 0
 
-for epoch in range(121):
-    '''
-    mu = 0
-    for name in list(vars()):
-        print(name, " ### ", sys.getsizeof(name))
-        mu = mu + sys.getsizeof(name)
-    print(mu)
-    '''
+# (always) creates a new folder in which the train results will be placed
+while os.path.exists(img_folder + "/AmpF=" + str(amplification_factor) + "_IMG_COUNT=" + str(img_count) + "_TryNR=" + str(try_nr)):
+    try_nr += 1
+target_folder = img_folder + "/AmpF=" + str(amplification_factor) + "_IMG_COUNT=" + str(img_count) + "_TryNR=" + str(try_nr)
+os.makedirs(target_folder)
+
+cv2.imwrite(target_folder + "/" + "_out_" + "INIT_" + "AmpF=" + str(amplification_factor) + "_IMG_COUNT=" + str(img_count)
+            + "_Adversarial_Patch.jpg", cv2.cvtColor(init_patch, cv2.COLOR_RGB2BGR))
+
+for epoch in range(101):
+
     bbox, adv_img, new_patch = new_run(old_patch, images, amplification_factor)
-    #print(tf.cast(new_patch, dtype=tf.float32)-old_patch)
-    """
-    if i ==0:
-      output_images(bbox, adv_img, "first")
-    elif i == 49:
-      output_images(bbox, adv_img, "last")    np_patch_out = new_patch.numpy()
-    np_patch_out = np.fix(np_patch_out)
-    cv2.imwrite(img_folder + "/" + "_out_" + str(epoch) + "_AmpF=" + str(amplification_factor) + "_Adversarial_Patch.jpg",
-                cv2.cvtColor(np_patch_out, cv2.COLOR_RGB2BGR))
 
-    else:
-      output_images(bbox, adv_img)
-    """
-    cv2.imwrite(img_folder + "/" + "1kImgResultsValentin" + "/" + "_out_" + str(epoch) + "_AmpF=" + str(amplification_factor) + "_Adversarial_Patch.jpg", cv2.cvtColor(new_patch.numpy(), cv2.COLOR_RGB2BGR))
+    cv2.imwrite(target_folder + "/" + "_out_" + str(epoch) + "_AmpF=" + str(amplification_factor) + "_Adversarial_Patch.jpg", cv2.cvtColor(new_patch.numpy(), cv2.COLOR_RGB2BGR))
 
     if epoch % 5 == 0:
       output_images(bbox, adv_img, new_patch, str(epoch)+"_")
@@ -277,58 +253,5 @@ for epoch in range(121):
     print("Epoch", epoch)
 
     mu = 0
-    '''
-    for name in list(vars()):
-        print(name, " ### ", sys.getsizeof(name))
-        mu = mu + sys.getsizeof(name)
-    print(mu)
-    '''
-    """
-      if i == 1:
-        uatch = cv2.cvtColor(cv2.imread(('wizards.jpg')), cv2.COLOR_BGR2RGB)
-    """
-'''
-def loss_object():
-    #print(patch)
-    p = patch.numpy()
-    #print(p)
-    a = apply_patch(images, p)
-    s2 = run(p, a)
 
-    confidence_list = []
-    for ASes_of_one_image in s2:
-        #print(ASes_of_one_image['AS'])
-        #print("______________________________________________________________________________________________________________")
-        for AS_of_one_image in ASes_of_one_image['AS']:
-            #print(AS_of_one_image['confidence_score'])
-            confidence_list.append(AS_of_one_image['confidence_score'])
-
-    loss = tf.divide(tf.math.reduce_sum(tf.math.log(confidence_list)), len(confidence_list))
-
-    return loss
-'''
-
-'''
-opt = tf.keras.optimizers.SGD(learning_rate=0.01) #learning rate laut dem paper
-for i in range(50):
-    with tf.GradientTape() as tape:
-        tape.watch(patch)
-        loss = loss_object()
-    grads = tape.gradient((loss, patch))
-    processed_grads = [g for g in grads]
-    grads_and_vars = zip(processed_grads, patch)
-    opt.applygradients(grads_and_vars)
-out_patch = patch.numpy
-cv2.imwrite(img_folder + "/" + "_out_" + "Patch", cv2.cvtColor(out_patch, cv2.COLOR_RGB2BGR))
-'''
-
-
-'''
-opt = tf.keras.optimizers.SGD(learning_rate=alpha)
-for i in range(50):
-    opt.minimize(loss_object(), patch)
-out_patch = patch.numpy
-cv2.imwrite(img_folder + "/" + "_out_" + "Patch",
-            cv2.cvtColor(out_patch, cv2.COLOR_RGB2BGR))
-'''
 
