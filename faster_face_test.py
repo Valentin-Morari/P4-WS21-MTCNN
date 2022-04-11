@@ -460,6 +460,7 @@ for patch_name in os.listdir(img_folder + "/" + patch_folder): # load and perfor
     attacked_images = apply_patch_multiple(images, patch)
     run_test_prepared(attacked_images, patch_name)
     """
+    # When applying the patch to one image at a time [Saving memory]
     run_test_unprepared(images, patch, patch_name)
 
     cv2.imwrite(img_folder + "/" + results_folder + "/" + patch_name + "/" + patch_name,
