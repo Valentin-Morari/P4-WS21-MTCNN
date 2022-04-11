@@ -243,7 +243,7 @@ class MTCNN(object):
         """
         Generates bounding box based on PNET results 
         
-        :param imap:
+        :param imap: nd-array
           mapped indexes of PNET face detection result
         :param reg: nd-array
           bounding box regression vector 
