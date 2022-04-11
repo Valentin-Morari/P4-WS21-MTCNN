@@ -128,7 +128,7 @@ for epoch in range(101):
     if epoch % 5 == 0:
         np_patch_out = new_patch.numpy()
         np_patch_out = np.fix(np_patch_out)
-        cv2.imwrite(img_folder + "/" + "_out_" + str(epoch) + "_AmpF=" + str(amplification_factor) + "_IMG_COUNT="
+        cv2.imwrite(target_folder + "/" + "_out_" + str(epoch) + "_AmpF=" + str(amplification_factor) + "_IMG_COUNT="
                     + str(img_count) + "_Adversarial_Patch.jpg", cv2.cvtColor(np_patch_out, cv2.COLOR_RGB2BGR))
 
     if epoch == 60:
