@@ -25,7 +25,7 @@ while labels:
     if n == 0:
         for _ in range(52762):  # skip to the dataset relevant to us - this is the line number where ground truths for our selected dataset start, within the labels file
             next(labels)
-    if n == 20:  # number of photos processed
+    if n == 994:  # number of photos processed
         break
 
     n += 1

@@ -1,4 +1,3 @@
-import gc
 import cv2
 from mtcnn import original_MTCNN
 import numpy as np
@@ -7,36 +6,37 @@ import math
 import os
 import shutil
 
-ground_truths_detector = original_MTCNN()
+original_detector = original_MTCNN()
 
-# loads the images into an array
-img_folder = "User_Friendly/Test"
+# Loads the images into an array
+img_folder = "Test_Faces"
 patch_folder = "to_test"
 results_folder = "test_results"
 
-images = []  # list of image data used for testing patches
-image_names = os.listdir(img_folder + '/Images')  # the file names of images
-ground_truths = {}  # the ground truths of faces in loaded images
+images = []  # List of image data used for testing patches
+image_names = []  # The file names of images
+ground_truths = {}  # The ground truths of faces in loaded images
 
-for image_name in image_names:
-    print(image_name)
-    # loads the image into memory
-    image = cv2.cvtColor(cv2.imread((img_folder + "/Images/" + image_name)), cv2.COLOR_BGR2RGB)
-    # finds the ground truths [faces] of the image using the original output of MTCNN
-    result_ground_truths = ground_truths_detector.detect_faces(image)
-    # saves the image into images
-    images.append(image)
-    ground_truths[image_name] = []
-    # saves the ground truths into the dictionary ground truths with the name of the image as the pointer
-    for result_ground_truth in result_ground_truths:
-        ground_truths[image_name].append(result_ground_truth['box'])
+labels = open(img_folder + "/" + "labels.txt", "r")
 
-del(ground_truths_detector)
-gc.collect()
+while labels:
+    img_name = labels.readline().rstrip("\n")
+    if img_name == "":
+        labels.close()
+        break
 
+    image_names.append(img_name)
+
+    images.append(cv2.cvtColor(cv2.imread((img_folder + "/" + img_name)), cv2.COLOR_BGR2RGB))
+    ground_truth_count = int(labels.readline().rstrip("\n"))
+
+    ground_truths[img_name] = []
+
+    for i in range(ground_truth_count):
+        ground_truths[img_name].append([int(value) for value in labels.readline().rstrip("\n").split()])
 
 alpha = 0.5  # to match paper's concrete parameters
-lambda_IoU = 0.6  # to match paper's concrete parameters
+lambda_IoU = 0.6  # To match paper's concrete parameters
 
 
 def IoU(boxA, boxB):
@@ -102,11 +102,11 @@ def output_image(bounding_boxes_of_image, attacked_image, name_of_image, patch_r
 
     working_image = copy.deepcopy(attacked_image)  # don't modify the original pictures
 
-    # number of found faces (bounding boxes) in the image
+    # Number of found faces (bounding boxes) in the image
     face_nr = 0
-    # number of found faces (bounding boxes) with confidence score bigger than or equal to 0.99. These are the faces, which were unsuccessfully attacked
+    # Number of found faces (bounding boxes) with confidence score bigger than or equal to 0.99. These are the faces, which were unsuccessfully attacked
     over_face_nr = 0
-    # string containing all found bounding boxes
+    # String containing all found bounding boxes
     bboxes = ""
 
     for ground_truth_bounding_box in ground_truths_of_image:  # ground truth loop
@@ -127,7 +127,6 @@ def output_image(bounding_boxes_of_image, attacked_image, name_of_image, patch_r
         if confidence_score >= 0.99:
             over_face_nr += 1
 
-        # makes the bounding box visible
         print(name_of_image + " has", bounding_box, "with " + str(confidence_score))
         bboxes += str(name_of_image + " has ") + str(bounding_box) + " with " + str(confidence_score) + "\n"
         cv2.rectangle(working_image,
@@ -142,19 +141,19 @@ def output_image(bounding_boxes_of_image, attacked_image, name_of_image, patch_r
         if confidence_score > highest_confidence_score:
             highest_confidence_score = confidence_score
 
-    # the highest found confidence score in the image
+    # The highest found confidence score in the image
     prefix = str(highest_confidence_score)
 
-    # creates working_image in which the faces are marked through their bounding boxes
+    # Creates working_image in which the faces are marked through their bounding boxes
     # HCS (for highest confidence score in the image) and PN (for picture name)
-    # code below is used for writing the output files. This depends on the labels file you use, so adjust where necessary!
+    # Code below is used for writing the output files. This depends on the labels file you use, so adjust where necessary!
     try:
-        # used if the ground truths were taken from wider_face_train_bbx_gt.txt
+        # Used if the ground truths were taken from wider_face_train_bbx_gt.txt
         cv2.imwrite(
             img_folder + "/" + results_folder + "/" + patch_results_folder + "/" + "HCS=" + prefix + "_PN="
             + name_of_image.split('/')[1], cv2.cvtColor(working_image, cv2.COLOR_RGB2BGR))
     except:
-        # used if the ground truths were taken from labels.txt
+        # Used if the ground truths were taken from labels.txt
         cv2.imwrite(
             img_folder + "/" + results_folder + "/" + patch_results_folder + "/" + "HCS=" + prefix + "_PN=" + name_of_image
             , cv2.cvtColor(working_image, cv2.COLOR_RGB2BGR))
@@ -162,74 +161,73 @@ def output_image(bounding_boxes_of_image, attacked_image, name_of_image, patch_r
     return bboxes, face_nr, over_face_nr
 
 
-def apply_patch_one(original, adversarial_patch, ground_truth_boxes):
+def apply_patch_multiple(originals, adversarial_patch):
     """
-    Applies the adversarial patch onto the original picture (ONLY ONE)
+    Applies the adversarial patch onto the original pictures (MULTIPLE)
 
-    :param original: list
-        image on which the adversarial patch is applied to
+    :param originals: list
+        images on which the adversarial patch is applied to
     :param adversarial_patch: nd-array
         the adversarial patch
-    :param ground_truths: list
-        ground_truths of the image
     :return: list
-        the original image but with the patch placed, relative to the ground truths
+        the original images but with the patch placed, relative to the ground truths
     """
 
-    working_image = copy.deepcopy(original)  # don't modify the original picture
-    adv_img_rows = working_image.shape[0]
-    adv_img_cols = working_image.shape[1]
+    working_images = copy.deepcopy(originals)  # don't modify the original pictures
+    for image_nr in range(len(working_images)):  # loop through the copied pictures
 
-    # draw detected face + plaster patch over source
-    for bounding_box in ground_truth_boxes:  # ground truth loop
-        resize_value = round(alpha * math.sqrt(bounding_box[2] * bounding_box[
-            3]))  # as per the paper (pg. 7 of "Design and Interpretation of Universal Adversarial Patches in Face Detection")
+        ground_truth_boxes = ground_truths[image_names[image_nr]]  # pull up ground_truth data for this picture
+        adv_img_rows = working_images[image_nr].shape[0]
+        adv_img_cols = working_images[image_nr].shape[1]
 
-        if resize_value == 0:
-            continue
+        # draw detected face + plaster patch over source
+        for bounding_box in ground_truth_boxes:  # ground truth loop
+            resize_value = round(alpha * math.sqrt(bounding_box[2] * bounding_box[
+                3]))  # as per the paper (pg. 7 of "Design and Interpretation of Universal Adversarial Patches in Face Detection")
 
-        resized_P = cv2.resize(adversarial_patch, (resize_value,
-                                                   resize_value))  # as per the paper (pg. 7 of "Design and Interpretation of Universal Adversarial Patches in Face Detection")
+            if resize_value == 0:
+                continue
 
-        x_P = round(bounding_box[2] / 2)  # as per the paper, x_P is in the center position of the bounding box
-        y_P = round(resize_value / 2)  # as per the paper, y_P is in the center position of the bounding box
+            resized_P = cv2.resize(adversarial_patch, (resize_value,
+                resize_value))  # as per the paper (pg. 7 of "Design and Interpretation of Universal Adversarial Patches in Face Detection")
 
-        '''Finding the indices where to put the patch'''
-        y_start = y_P + bounding_box[1] - round(resized_P.shape[0] / 2)
-        x_start = x_P + bounding_box[0] - round(resized_P.shape[1] / 2)
+            x_P = round(bounding_box[2] / 2)  # as per the paper, x_P is in the center position of the bounding box
+            y_P = round(resize_value / 2)  # as per the paper, y_P is in the center position of the bounding box
 
-        y_end = y_start + resized_P.shape[0]
-        x_end = x_start + resized_P.shape[1]
+            '''Finding the indices where to put the patch'''
+            y_start = y_P + bounding_box[1] - round(resized_P.shape[0] / 2)
+            x_start = x_P + bounding_box[0] - round(resized_P.shape[1] / 2)
 
-        '''If the bounding box is outside the image'''
-        if x_start < 0:
-            x_end -= x_start
-            x_start = 0
-        if y_start < 0:
-            y_end -= y_start
-            y_start = 0
+            y_end = y_start + resized_P.shape[0]
+            x_end = x_start + resized_P.shape[1]
 
-        if x_end > adv_img_cols:
-            x_start -= x_end - adv_img_cols
-            x_end = adv_img_cols
-        if y_end > adv_img_rows:
-            y_start -= y_end - adv_img_rows
-            y_end = adv_img_rows
+            '''If the bounding box is outside the image'''
+            if x_start < 0:
+                x_end -= x_start
+                x_start = 0
+            if y_start < 0:
+                y_end -= y_start
+                y_start = 0
 
-        # draw patch over source image, by specifying the coordinates to overwrite
-        working_image[y_start:y_end, x_start:x_end] = resized_P
+            if x_end > adv_img_cols:
+                x_start -= x_end - adv_img_cols
+                x_end = adv_img_cols
+            if y_end > adv_img_rows:
+                y_start -= y_end - adv_img_rows
+                y_end = adv_img_rows
 
-    return working_image
+            # draw patch over source image, by specifying the coordinates to overwrite
+            working_images[image_nr][y_start:y_end, x_start:x_end] = resized_P
+
+    return working_images
 
 
-def run_test_unprepared(original_imgs, adversarial_patch, patch_results_folder):
+def run_test_prepared(attacked_imgs, patch_results_folder):
     """
-    Tests an adversarial patch on given unprepared images. In serial the patch is added to the
+    Tests an adversarial patch on given already prepared images, i.e. the patch has already been applied to the images.
 
-    :param original_imgs: list
-        images on which the patch will be applied to
-    :param  adversarial_patch: nd-array
-        the adversarial patch
+    :param attacked_imgs: list
+        images on which the patch was applied to
     :param patch_results_folder: str
         for the relative path where test results will be placed
     :return:
@@ -256,16 +254,13 @@ def run_test_unprepared(original_imgs, adversarial_patch, patch_results_folder):
     # number of images where faces were found
     total_image_nr = 0
 
-    for image_nr in range(len(original_imgs)):
+    for image_nr in range(len(attacked_imgs)):
         # bounding boxes marking faces
         results = []
         print("Testing on:", image_nr, image_names[image_nr])
         try:  # handles exotic errors (often related to extreme bounding box sizes) by skipping over images that produce them
 
-            attacked_image = apply_patch_one(original_imgs[image_nr], adversarial_patch
-                                             , ground_truths[image_names[image_nr]])
-
-            tmp_results = original_detector.detect_faces(attacked_image)
+            tmp_results = original_detector.detect_faces(attacked_imgs[image_nr])
 
             # only bounding boxes representing faces are relevant
             for bb in tmp_results:
@@ -282,7 +277,7 @@ def run_test_unprepared(original_imgs, adversarial_patch, patch_results_folder):
             total_image_nr += 1
 
         # output face detection results for images with the adversarial patch applied
-        tmp_bboxes, tmp_face_nr, tmp_over_face_nr = output_image(results, attacked_image, image_names[image_nr]
+        tmp_bboxes, tmp_face_nr, tmp_over_face_nr = output_image(results, attacked_imgs[image_nr], image_names[image_nr]
                                                                  , patch_results_folder
                                                                  , ground_truths[image_names[image_nr]])
 
@@ -292,7 +287,7 @@ def run_test_unprepared(original_imgs, adversarial_patch, patch_results_folder):
         total_faces += len(ground_truths[image_names[image_nr]])
 
     # create a short descriptive .txt file in the folder, giving additional details for the test results
-    top_text = "In " + str(total_image_nr) + " of " + str(len(original_imgs)) + " images " \
+    top_text = "In " + str(total_image_nr) + " of " + str(len(attacked_imgs)) + " images " \
                + str(face_nr) + " of " + str(total_faces) + " faces were found. \n"
     bboxes = top_text + str(over_face_nr) + " of those faces had a confidence score >= 0.99. \n \n" + bboxes
 
@@ -303,14 +298,13 @@ def run_test_unprepared(original_imgs, adversarial_patch, patch_results_folder):
     return
 
 
-original_detector = original_MTCNN()
-
 for patch_name in os.listdir(img_folder + "/" + patch_folder): # load and perform testing on each patch located in the local patch folder
     print("\n" + "Testing Patch " + patch_name)
 
     patch = cv2.cvtColor(cv2.imread((img_folder + "/" + patch_folder + "/" + patch_name)), cv2.COLOR_BGR2RGB)
 
-    run_test_unprepared(images, patch, patch_name)
+    attacked_images = apply_patch_multiple(images, patch)
+    run_test_prepared(attacked_images, patch_name)
 
     cv2.imwrite(img_folder + "/" + results_folder + "/" + patch_name + "/" + patch_name,
                 cv2.cvtColor(patch, cv2.COLOR_RGB2BGR))
