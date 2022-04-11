@@ -38,20 +38,42 @@ To run our project from scratch (no conda):
 ### How to train 
   
 PATCH TRAINING:
-  python3.8 test.py
-  or
-  python3.8 test_on_server.py (memory optimized for execution on a remote server)
-
-  What happens in test.py:
   
-    - img_folder (Face_Control) -> stores images to use for training the adversarial patch generation
-    - labels (wider_face_train_bbx_gt.txt) -> retrieve ground truths of the bounding boxes for the faces useed during training
-    - init_patch -> which image (the adversarial patch) to initialize from (random, or specify a starting image)
-    - amplification factor -> gradient amplification power to offset smaller training image set or smaller number of epochs 
-                              or a bigger patch
-    - various cv2.imwrite functions -> used for saving the images with the patches applied and the patches themselves to the hard drive
+  How to train the normal version:
+  
+    python3.8 test.py (additionally returns images with the applied adversarial patches)
+    or
+    python3.8 test_on_server.py (memory optimized for execution on a remote server| only returns the adversarial patch)
 
-  Check the Face_Control/1kImgResults folder for execution results. 
+    What happens in test.py and in test_on_server:
+  
+      - img_folder (Face_Control) -> stores images to use for training the adversarial patch generation
+      - labels (wider_face_train_bbx_gt.txt) -> retrieve ground truths of the bounding boxes for the faces useed during training
+      - init_patch -> which image (the adversarial patch) to initialize from (random, or specify a starting image)
+      - amplification factor -> gradient amplification power to offset smaller training image set or smaller number of epochs 
+                              or a bigger patch
+      - various cv2.imwrite functions -> used for saving the images with the patches applied and the patches themselves to the hard drive
+
+    Check the latest TryNR folder for your used amplification factor and image count in the Face_Control folder for execution 
+    results. (e.g. AmpF=1000000_IMG_COUNT=1029_TryNR=0)
+  
+  How to train the user friendly version:
+  
+    add images, with which you want to train a adversarial patch, into User_Friendly/Train/Images
+    
+    execute python3.8 friendly_test_on_server.py
+    
+    What happens in friendly_test_on_server.py
+    
+      - img_folder (User_Friendly/Train) -> stores images to use for training the adversarial patch generation
+      - ground_truths -> uses the results of a image in MTCNN as the ground truths for the image
+      - init_patch -> which image (the adversarial patch) to initialize from (random)
+      - amplification factor -> gradient amplification power to offset smaller training image set or smaller number of epochs 
+                              or a bigger patch
+      - various cv2.imwrite functions -> used for saving the patches to the hard drive
+    
+    Check the latest TryNR folder for your used amplification factor and image count in the User_Friendly/Train folder for execution 
+    results. (e.g. AmpF=1000000_IMG_COUNT=8_TryNR=0)
   
   Legend: Blue box - detected face, with its confidence score above it, and green - ground truth bounding box.
 
@@ -59,12 +81,20 @@ PATCH TRAINING:
   
 PATCH TESTING:
 
+How to test with the normal version:
+
   1. place the 0--Parade, 2--Demonstration and 13--Interview (or whatever image testing datasets you want) into the folder Test_Faces.
   2. place the patch(es) you want to test into the Test_Faces/to_test folder
   2. make sure there's an appropriate ground truth label file in the Test_Faces directory (loading images for testing is done using this file)
   3. python3.8 face_test.py
   4. test results will be placed in the Test_Faces/test_results folder, into a newly created folder based on the name of your patch(es)
 
+How to test with the user friendly version:
+
+  1. place images you want your patches to test on into the folder User_Friendly/Test/Images.
+  2. place the patch(es) you want to test into the User_Friendly/Test/to_test folder
+  3. python3.8 friendly_face_test.py
+  4. test results will be placed in the User_Friendly/Test/test_results folder, into a newly created folder based on the name of your patch(es)
 
   
     
