@@ -122,7 +122,7 @@ cv2.imwrite(
 
 for epoch in range(101):
 
-    _, _, new_patch = new_run(old_patch, images, amplification_factor)
+    new_patch = new_run(old_patch, images, amplification_factor)
     # print(tf.cast(new_patch, dtype=tf.float32)-old_patch)
 
     if epoch % 5 == 0:
