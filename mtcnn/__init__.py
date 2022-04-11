@@ -24,6 +24,7 @@
 # SOFTWARE.
 
 from mtcnn.mtcnn import MTCNN
+from mtcnn.original_mtcnn import original_MTCNN
 
 
 __author__ = "Iván de Paz Centeno"

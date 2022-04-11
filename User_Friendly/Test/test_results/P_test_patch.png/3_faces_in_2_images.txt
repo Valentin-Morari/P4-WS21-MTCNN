@@ -1,0 +1,6 @@
+In 2 of 8 images3 of 295 faces were found. 
+0 of those faces had a confidence score >= 0.99. 
+ 
+2_Demonstration_Demonstration_Or_Protest_2_17.jpg has [757, 303, 18, 27] with 0.918
+2_Demonstration_Demonstration_Or_Protest_2_17.jpg has [507, 534, 18, 26] with 0.704
+2_Demonstration_Demonstration_Or_Protest_2_4.jpg has [168, 239, 15, 18] with 0.778
