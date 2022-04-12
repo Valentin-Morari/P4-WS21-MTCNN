@@ -43,7 +43,7 @@ PATCH TRAINING:
   
     python3.8 test.py (additionally returns images with the applied adversarial patches)
     or
-    python3.8 test_on_server.py (memory optimized for execution on a remote server| only returns the adversarial patch)
+    python3.8 test_on_server.py (memory optimized for execution on a remote server | only returns the adversarial patch)
 
     What happens in test.py and in test_on_server:
   
